@@ -68,16 +68,19 @@ const EXTRAS = [
 const money = (n: number) => n.toFixed(2) + " CHF";
 const uuid = () => Math.random().toString(36).slice(2, 9);
 
-// Persist minimal state across reloads to simulate session
-const saveLocal = (key: string, value: any) => localStorage.setItem(key, JSON.stringify(value));
-const readLocal = (key: string, fallback: any) => {
+// neu – generisch & strikt getypt:
+function saveLocal<T>(key: string, value: T) {
+  localStorage.setItem(key, JSON.stringify(value));
+}
+
+function readLocal<T>(key: string, fallback: T): T {
   try {
     const raw = localStorage.getItem(key);
-    return raw ? JSON.parse(raw) : fallback;
+    return raw ? (JSON.parse(raw) as T) : fallback;
   } catch {
     return fallback;
   }
-};
+}
 
 // --- Component ---
 export default function SelfOrderingPrototype() {
@@ -457,6 +460,13 @@ function StatusView({ activeOrder, onBackToMenu }: { activeOrder: Order | null; 
   );
 }
 
+
+type FilterType = OrderStatus | "all";
+
+const [filter, setFilter] = useState<FilterType>("all");
+
+
+
 function KitchenView({ orders, onAdvance }: { orders: Order[]; onAdvance: (o: Order) => void }) {
   const [filter, setFilter] = useState<OrderStatus | "all">("all");
   const filtered = orders.filter((o) => (filter === "all" ? true : o.status === filter));
@@ -467,7 +477,7 @@ function KitchenView({ orders, onAdvance }: { orders: Order[]; onAdvance: (o: Or
         <h2 className="text-2xl font-semibold">Küchen-Dashboard (Demo)</h2>
         <div className="flex items-center gap-2 text-sm">
           <span>Filter:</span>
-          <select className="border rounded-lg px-2 py-1" value={filter} onChange={(e) => setFilter(e.target.value as any)}>
+          <select className="border rounded-lg px-2 py-1" value={filter} onChange={(e) => setFilter(e.target.value as FilterType)}>
             <option value="all">Alle</option>
             <option value="in_queue">Warteschlange</option>
             <option value="preparing">In Zubereitung</option>
