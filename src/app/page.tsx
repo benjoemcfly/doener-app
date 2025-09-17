@@ -467,57 +467,90 @@ const [filter, setFilter] = useState<FilterType>("all");
 
 
 
-function KitchenView() {
-  // Typ für den Filter
+function KitchenView({
+  orders,
+  onAdvance,
+}: {
+  orders: Order[];
+  onAdvance: (o: Order) => void;
+}) {
+  // Filter-State gehört IN die Komponente
   type FilterType = OrderStatus | "all";
-
-  // State für den Filter
   const [filter, setFilter] = useState<FilterType>("all");
 
+  const filtered = orders.filter((o) =>
+    filter === "all" ? true : o.status === filter
+  );
+
   return (
-    <div className="space-y-4">
-      <h2 className="text-xl font-bold">Küchenansicht</h2>
-
-      {/* Filter Dropdown */}
-      <select
-        className="border rounded-lg px-2 py-1"
-        value={filter}
-        onChange={(e) => setFilter(e.target.value as FilterType)}
-      >
-        <option value="all">Alle</option>
-        <option value="in_queue">Warteschlange</option>
-        <option value="preparing">In Zubereitung</option>
-        <option value="ready">Abholbereit</option>
-        <option value="picked_up">Abgeholt</option>
-      </select>
-
-      {/* Liste der Bestellungen */}
-      <div className="space-y-2">
-        {orders
-          .filter((o) => filter === "all" || o.status === filter)
-          .map((order) => (
-            <div
-              key={order.id}
-              className="border rounded-xl p-3 flex justify-between items-center"
-            >
-              <div>
-                <p className="font-medium">{order.item}</p>
-                <p className="text-sm text-gray-500">
-                  Status: {order.status}
-                </p>
-              </div>
-              <button
-                className="btn-primary"
-                onClick={() => advanceStatus(order.id)}
-              >
-                Nächster Status
-              </button>
-            </div>
-          ))}
+    <section className="max-w-4xl mx-auto">
+      <div className="flex items-center justify-between mb-3">
+        <h2 className="text-2xl font-semibold">Küchen-Dashboard (Demo)</h2>
+        <div className="flex items-center gap-2 text-sm">
+          <span>Filter:</span>
+          <select
+            className="border rounded-lg px-2 py-1"
+            value={filter}
+            onChange={(e) => setFilter(e.target.value as FilterType)}
+          >
+            <option value="all">Alle</option>
+            <option value="in_queue">Warteschlange</option>
+            <option value="preparing">In Zubereitung</option>
+            <option value="ready">Abholbereit</option>
+            <option value="picked_up">Abgeholt</option>
+          </select>
+        </div>
       </div>
-    </div>
+
+      {filtered.length === 0 ? (
+        <div className="text-neutral-600">Keine Bestellungen.</div>
+      ) : (
+        <div className="grid md:grid-cols-2 gap-4">
+          <AnimatePresence>
+            {filtered.map((o) => (
+              <motion.div
+                key={o.orderId}
+                layout
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -10 }}
+                className="bg-white border rounded-2xl p-4"
+              >
+                <div className="flex items-start justify-between">
+                  <div>
+                    <div className="text-sm text-neutral-600">Bestellung</div>
+                    <div className="text-xl font-semibold">{o.orderId}</div>
+                  </div>
+                  <StatusBadge status={o.status} />
+                </div>
+                <ul className="mt-2 text-sm text-neutral-700 space-y-1">
+                  {o.lines.map((l) => (
+                    <li key={l.id}>
+                      {l.qty}× {l.item.name}
+                      {l.custom.extras.length > 0 && (
+                        <span className="text-neutral-500">
+                          {" "}
+                          · {l.custom.extras.join(", ")}
+                        </span>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+                <div className="mt-3 flex items-center justify-between">
+                  <div className="font-medium">Gesamt: {money(o.total)}</div>
+                  <button className="btn-primary" onClick={() => onAdvance(o)}>
+                    Nächster Status
+                  </button>
+                </div>
+              </motion.div>
+            ))}
+          </AnimatePresence>
+        </div>
+      )}
+    </section>
   );
 }
+
 
 
 function tabBtn(active: boolean) {
