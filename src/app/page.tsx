@@ -461,9 +461,8 @@ function StatusView({ activeOrder, onBackToMenu }: { activeOrder: Order | null; 
 }
 
 
-type FilterType = OrderStatus | "all";
 
-const [filter, setFilter] = useState<FilterType>("all");
+
 
 
 
@@ -474,7 +473,7 @@ function KitchenView({
   orders: Order[];
   onAdvance: (o: Order) => void;
 }) {
-  // Filter-State gehört IN die Komponente
+  // Nur hier drin darf der State leben:
   type FilterType = OrderStatus | "all";
   const [filter, setFilter] = useState<FilterType>("all");
 
@@ -523,6 +522,7 @@ function KitchenView({
                   </div>
                   <StatusBadge status={o.status} />
                 </div>
+
                 <ul className="mt-2 text-sm text-neutral-700 space-y-1">
                   {o.lines.map((l) => (
                     <li key={l.id}>
@@ -536,6 +536,7 @@ function KitchenView({
                     </li>
                   ))}
                 </ul>
+
                 <div className="mt-3 flex items-center justify-between">
                   <div className="font-medium">Gesamt: {money(o.total)}</div>
                   <button className="btn-primary" onClick={() => onAdvance(o)}>
@@ -550,6 +551,7 @@ function KitchenView({
     </section>
   );
 }
+
 
 
 
