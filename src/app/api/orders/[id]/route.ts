@@ -17,14 +17,17 @@ interface DbOrderRow {
 }
 
 export async function GET(_req: NextRequest, context: { params: Promise<{ id: string }> }) {
-  const { id } = await context.params; // <- Next 15: params ist ein Promise
+  const { id } = await context.params;
   try {
-    const rows = await sql<DbOrderRow[]>`
+    // ❌ KEIN sql<DbOrderRow[]>
+    // ✅ Ergebnis *casten*
+    const rows = (await sql`
       SELECT id, lines, total_cents, status, created_at
       FROM public.orders
       WHERE id = ${id}
       LIMIT 1
-    `;
+    `) as DbOrderRow[];
+
     if (rows.length === 0) {
       return NextResponse.json({ error: 'Not found' }, { status: 404 });
     }
@@ -42,8 +45,9 @@ export async function GET(_req: NextRequest, context: { params: Promise<{ id: st
   }
 }
 
+
 export async function PATCH(req: NextRequest, context: { params: Promise<{ id: string }> }) {
-  const { id } = await context.params; // <- ebenso
+  const { id } = await context.params;
   try {
     const body = (await req.json()) as { status: OrderStatus };
     const allowed: ReadonlyArray<OrderStatus> = ['in_queue', 'preparing', 'ready', 'picked_up'];
