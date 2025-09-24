@@ -5,7 +5,8 @@ export const runtime = 'nodejs';
 
 export async function GET() {
   try {
-    const rows = await sql<{ now: string }[]>`select now() as now`;
+    // Kein Generic <> mehr – stattdessen Ergebnis casten
+    const rows = (await sql`select now() as now`) as { now: string }[];
     return NextResponse.json({ ok: true, dbTime: rows[0]?.now ?? null });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : 'Unknown error';
