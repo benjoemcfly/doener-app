@@ -1,13 +1,16 @@
 'use client';
 
-import React, { useMemo, useState, useEffect, useRef } from "react";
-import { motion, AnimatePresence } from "framer-motion";
+import React, { useMemo, useState, useEffect, useRef } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 
-// --- Types ---
-type Sauce = "Knoblauch" | "Scharf" | "Yoghurt" | "Ohne";
-type Salad = "Alles" | "Ohne Zwiebeln" | "Ohne Tomaten" | "Ohne Salat";
+// =====================
+// Types
+// =====================
 
-type ItemId = "doener" | "dueruem" | "pide" | "lahmacun";
+type Sauce = 'Knoblauch' | 'Scharf' | 'Yoghurt' | 'Ohne';
+type Salad = 'Alles' | 'Ohne Zwiebeln' | 'Ohne Tomaten' | 'Ohne Salat';
+
+type ItemId = 'doener' | 'dueruem' | 'pide' | 'lahmacun';
 
 interface MenuItem {
   id: ItemId;
@@ -19,7 +22,7 @@ interface MenuItem {
 interface Customization {
   sauce: Sauce;
   salad: Salad;
-  extras: string[]; // e.g., "Extra Käse"
+  extras: string[]; // z.B. "Extra Käse"
 }
 
 interface CartLine {
@@ -29,7 +32,7 @@ interface CartLine {
   custom: Customization;
 }
 
-type OrderStatus = "in_queue" | "preparing" | "ready" | "picked_up";
+type OrderStatus = 'in_queue' | 'preparing' | 'ready' | 'picked_up';
 
 interface Order {
   orderId: string;
@@ -39,38 +42,44 @@ interface Order {
   createdAt: string;
 }
 
-// --- Mock Data (wie zuvor) ---
+// =====================
+// Statisches Menü + Extras
+// =====================
+
 const MENU: MenuItem[] = [
   {
-    id: "doener",
-    name: "Döner",
+    id: 'doener',
+    name: 'Döner',
     basePrice: 9.5,
-    description: "Klassischer Döner mit Kalbfleisch oder Hähnchen, frisch vom Spieß.",
+    description: 'Klassischer Döner mit Kalbfleisch oder Hähnchen, frisch vom Spieß.',
   },
   {
-    id: "dueruem",
-    name: "Dürüm",
+    id: 'dueruem',
+    name: 'Dürüm',
     basePrice: 10.5,
-    description: "Gerolltes Fladenbrot, perfekt zum Mitnehmen.",
+    description: 'Gerolltes Fladenbrot, perfekt zum Mitnehmen.',
   },
-  { id: "pide", name: "Pide", basePrice: 12, description: "Ofenfrische Pide mit Käse oder Hackfleisch." },
-  { id: "lahmacun", name: "Lahmacun", basePrice: 8.5, description: "Dünner Fladen mit würzigem Belag." },
+  { id: 'pide', name: 'Pide', basePrice: 12, description: 'Ofenfrische Pide mit Käse oder Hackfleisch.' },
+  { id: 'lahmacun', name: 'Lahmacun', basePrice: 8.5, description: 'Dünner Fladen mit würzigem Belag.' },
 ];
 
 const EXTRAS = [
-  { name: "Extra Käse", price: 1.5 },
-  { name: "Extra Fleisch", price: 3 },
-  { name: "Pommes im Döner", price: 1 },
-  { name: "Jalapeños", price: 0.5 },
+  { name: 'Extra Käse', price: 1.5 },
+  { name: 'Extra Fleisch', price: 3 },
+  { name: 'Pommes im Döner', price: 1 },
+  { name: 'Jalapeños', price: 0.5 },
 ] as const;
 
-// --- Utility ---
-const money = (n: number) => n.toFixed(2) + " CHF";
+// =====================
+// Utilities
+// =====================
+
+const money = (n: number) => n.toFixed(2) + ' CHF';
 const uuid = () => Math.random().toString(36).slice(2, 9);
 
 function saveLocal<T>(key: string, value: T) {
   if (typeof window === 'undefined') return;
-  localStorage.setItem(key, JSON.stringify(value));
+  try { localStorage.setItem(key, JSON.stringify(value)); } catch {}
 }
 
 function readLocal<T>(key: string, fallback: T): T {
@@ -83,7 +92,10 @@ function readLocal<T>(key: string, fallback: T): T {
   }
 }
 
-// --- Notification helpers (in-tab) ---
+// =====================
+// Notification-Helpers (In-Tab)
+// =====================
+
 function canNotify() {
   return typeof window !== 'undefined' && 'Notification' in window;
 }
@@ -102,21 +114,22 @@ function notifyReady(orderId: string) {
     new Notification('Deine Bestellung ist abholbereit', {
       body: `Bestellnummer ${orderId}`,
       icon: '/favicon.ico',
-      tag: `ready-${orderId}`,
+      tag: `ready-${orderId}`, // vermeidet Duplikate
     });
-    // ← NEU: Typsicher ohne "any"
     const nav = navigator as Navigator & { vibrate?: (pattern: VibratePattern) => boolean };
     nav.vibrate?.([120, 70, 120]);
   } catch {}
 }
 
+// =====================
+// Server-API Helpers
+// =====================
 
-// ---- Server API helpers (Orders) ----
 async function apiCreateOrderFromCart(cart: CartLine[]): Promise<{ id: string; status: string }> {
   const total_cents = cart.reduce((sum, l) => {
     const extrasPrice = l.custom.extras.reduce(
-      (s, name) => s + (EXTRAS.find(e => e.name === name)?.price || 0),
-      0
+      (s, name) => s + (EXTRAS.find((e) => e.name === name)?.price || 0),
+      0,
     );
     const unit_cents = Math.round((l.item.basePrice + extrasPrice) * 100);
     return sum + unit_cents * l.qty;
@@ -126,7 +139,7 @@ async function apiCreateOrderFromCart(cart: CartLine[]): Promise<{ id: string; s
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     cache: 'no-store',
-    body: JSON.stringify({ lines: cart, total_cents })
+    body: JSON.stringify({ lines: cart, total_cents }),
   });
   if (!res.ok) throw new Error('Bestellung fehlgeschlagen');
   return res.json();
@@ -149,38 +162,41 @@ async function apiUpdateOrderStatus(id: string, status: OrderStatus) {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
     cache: 'no-store',
-    body: JSON.stringify({ status })
+    body: JSON.stringify({ status }),
   });
   if (!res.ok) throw new Error('Status-Update fehlgeschlagen');
 }
 
-// --- Component ---
+// =====================
+// Hauptkomponente
+// =====================
+
 export default function SelfOrderingPrototype() {
   const [selected, setSelected] = useState<MenuItem | null>(MENU[0]);
-  const [sauce, setSauce] = useState<Sauce>("Knoblauch");
-  const [salad, setSalad] = useState<Salad>("Alles");
+  const [sauce, setSauce] = useState<Sauce>('Knoblauch');
+  const [salad, setSalad] = useState<Salad>('Alles');
   const [extras, setExtras] = useState<string[]>([]);
   const [qty, setQty] = useState(1);
-  const [cart, setCart] = useState<CartLine[]>(() => readLocal("cart", []));
-  const [orders, setOrders] = useState<Order[]>(() => readLocal("orders", []));
-  const [view, setView] = useState<"menu" | "cart" | "status" | "kitchen">("menu");
-  const [activeOrderId, setActiveOrderId] = useState<string | null>(() => readLocal("activeOrderId", null));
+
+  const [cart, setCart] = useState<CartLine[]>(() => readLocal('cart', []));
+  const [orders, setOrders] = useState<Order[]>([]); // kommt aus DB (nicht lokal speichern)
+  const [view, setView] = useState<'menu' | 'cart' | 'status' | 'kitchen'>('menu');
+  const [activeOrderId, setActiveOrderId] = useState<string | null>(() => readLocal('activeOrderId', null));
 
   const lastNotifiedReadyId = useRef<string | null>(null);
 
-  // Local only: cart + activeOrderId speichern (orders NICHT mehr lokal persistieren)
-  useEffect(() => saveLocal("cart", cart), [cart]);
-  // useEffect(() => saveLocal("orders", orders), [orders]); // deaktiviert – Orders kommen aus der DB
-  useEffect(() => saveLocal("activeOrderId", activeOrderId), [activeOrderId]);
+  // Persist nur cart + activeOrderId
+  useEffect(() => saveLocal('cart', cart), [cart]);
+  useEffect(() => saveLocal('activeOrderId', activeOrderId), [activeOrderId]);
 
-  // Wenn Kunde die Status-Seite öffnet, einmalig um Permission bitten
+  // Beim Status-View um Berechtigung bitten
   useEffect(() => {
-    if (view === 'status') { void ensureNotifyPermission(); }
+    if (view === 'status') void ensureNotifyPermission();
   }, [view]);
 
-  // Kitchen: alle 4s Liste laden
+  // Kitchen: alle 4s Liste neu laden
   useEffect(() => {
-    if (view !== "kitchen") return;
+    if (view !== 'kitchen') return;
     let alive = true;
     const load = async () => {
       try {
@@ -193,18 +209,20 @@ export default function SelfOrderingPrototype() {
     return () => { alive = false; clearInterval(t); };
   }, [view]);
 
-  // Kunden-Status: alle 4s aktive Bestellung nachladen + bei "ready" benachrichtigen
+  // Kunden-Status: alle 4s die aktive Bestellung nachladen + bei "ready" benachrichtigen
   useEffect(() => {
-    if (!activeOrderId || view !== "status") return;
+    if (!activeOrderId || view !== 'status') return;
     let alive = true;
     const tick = async () => {
       try {
         const o = await apiFetchOrder(activeOrderId);
         if (o && alive) {
-          setOrders(prev => {
-            const i = prev.findIndex(x => x.orderId === o.orderId);
+          setOrders((prev) => {
+            const i = prev.findIndex((x) => x.orderId === o.orderId);
             if (i === -1) return [o, ...prev];
-            const copy = [...prev]; copy[i] = o; return copy;
+            const copy = [...prev];
+            copy[i] = o;
+            return copy;
           });
           if (o.status === 'ready' && lastNotifiedReadyId.current !== o.orderId) {
             notifyReady(o.orderId);
@@ -224,7 +242,9 @@ export default function SelfOrderingPrototype() {
     return (selected.basePrice + extrasPrice) * qty;
   }, [selected, extras, qty]);
 
-
+  function toggleExtra(name: string) {
+    setExtras((prev) => (prev.includes(name) ? prev.filter((x) => x !== name) : [...prev, name]));
+  }
 
   function addToCart() {
     if (!selected) return;
@@ -235,12 +255,14 @@ export default function SelfOrderingPrototype() {
       custom: { sauce, salad, extras: [...extras] },
     };
     setCart((c) => [...c, line]);
-    // reset qty and extras but keep selected
     setQty(1);
     setExtras([]);
   }
 
-  // NEU: schreibt in DB, merkt orderId und lädt Liste aus DB
+  function removeLine(id: string) {
+    setCart((c) => c.filter((l) => l.id !== id));
+  }
+
   function placeOrder() {
     if (cart.length === 0) return;
     void ensureNotifyPermission(); // Kunde früh um Erlaubnis bitten
@@ -249,16 +271,15 @@ export default function SelfOrderingPrototype() {
         const { id } = await apiCreateOrderFromCart(cart);
         setActiveOrderId(id);
         setCart([]);
-        setView("status");
+        setView('status');
         setOrders(await apiFetchOrders());
       } catch (e) {
         console.error(e);
-        alert("Bestellung konnte nicht gespeichert werden.");
+        alert('Bestellung konnte nicht gespeichert werden.');
       }
     })();
   }
 
-  // NEU: Status via API patchen und Liste neu laden
   function updateOrderStatus(orderId: string, next: OrderStatus) {
     (async () => {
       try {
@@ -266,7 +287,7 @@ export default function SelfOrderingPrototype() {
         setOrders(await apiFetchOrders());
       } catch (e) {
         console.error(e);
-        alert("Status-Update fehlgeschlagen.");
+        alert('Status-Update fehlgeschlagen.');
       }
     })();
   }
@@ -279,16 +300,16 @@ export default function SelfOrderingPrototype() {
         <div className="max-w-5xl mx-auto px-4 py-3 flex items-center justify-between">
           <div className="font-bold text-xl">🥙 Efendi Express</div>
           <nav className="flex gap-2">
-            <button className={`chip ${view === "menu" ? "chip-active" : ""}`} onClick={() => setView("menu")}>Menü</button>
-            <button className={`chip ${view === "cart" ? "chip-active" : ""}`} onClick={() => setView("cart")}>Warenkorb ({cart.length})</button>
-            <button className={`chip ${view === "status" ? "chip-active" : ""}`} onClick={() => setView("status")}>Status</button>
-            <button className={`chip ${view === "kitchen" ? "chip-active" : ""}`} onClick={() => setView("kitchen")}>Kitchen</button>
+            <button className={`chip ${view === 'menu' ? 'chip-active' : ''}`} onClick={() => setView('menu')}>Menü</button>
+            <button className={`chip ${view === 'cart' ? 'chip-active' : ''}`} onClick={() => setView('cart')}>Warenkorb ({cart.length})</button>
+            <button className={`chip ${view === 'status' ? 'chip-active' : ''}`} onClick={() => setView('status')}>Status</button>
+            <button className={`chip ${view === 'kitchen' ? 'chip-active' : ''}`} onClick={() => setView('kitchen')}>Kitchen</button>
           </nav>
         </div>
       </header>
 
       <main className="max-w-5xl mx-auto px-4 py-8 space-y-10">
-        {view === "menu" && (
+        {view === 'menu' && (
           <div className="grid md:grid-cols-2 gap-6">
             <section>
               <h2 className="text-2xl font-semibold mb-3">Gericht wählen</h2>
@@ -297,7 +318,7 @@ export default function SelfOrderingPrototype() {
                   <button
                     key={m.id}
                     className={`border rounded-2xl p-3 text-left hover:shadow transition ${
-                      selected?.id === m.id ? "border-emerald-500 ring-2 ring-emerald-200" : "border-neutral-200"
+                      selected?.id === m.id ? 'border-emerald-500 ring-2 ring-emerald-200' : 'border-neutral-200'
                     }`}
                     onClick={() => setSelected(m)}
                   >
@@ -313,8 +334,10 @@ export default function SelfOrderingPrototype() {
                 <div>
                   <div className="text-sm text-neutral-600 mb-1">Soße</div>
                   <div className="flex flex-wrap gap-2">
-                    {(["Knoblauch", "Scharf", "Yoghurt", "Ohne"] as Sauce[]).map((s) => (
-                      <Chip key={s} active={sauce === s} onClick={() => setSauce(s)}>{s}</Chip>
+                    {(['Knoblauch', 'Scharf', 'Yoghurt', 'Ohne'] as Sauce[]).map((s) => (
+                      <Chip key={s} active={sauce === s} onClick={() => setSauce(s)}>
+                        {s}
+                      </Chip>
                     ))}
                   </div>
                 </div>
@@ -322,8 +345,10 @@ export default function SelfOrderingPrototype() {
                 <div>
                   <div className="text-sm text-neutral-600 mb-1">Salat</div>
                   <div className="flex flex-wrap gap-2">
-                    {(["Alles", "Ohne Zwiebeln", "Ohne Tomaten", "Ohne Salat"] as Salad[]).map((s) => (
-                      <Chip key={s} active={salad === s} onClick={() => setSalad(s)}>{s}</Chip>
+                    {(['Alles', 'Ohne Zwiebeln', 'Ohne Tomaten', 'Ohne Salat'] as Salad[]).map((s) => (
+                      <Chip key={s} active={salad === s} onClick={() => setSalad(s)}>
+                        {s}
+                      </Chip>
                     ))}
                   </div>
                 </div>
@@ -332,7 +357,7 @@ export default function SelfOrderingPrototype() {
                   <div className="text-sm text-neutral-600 mb-1">Extras</div>
                   <div className="flex flex-wrap gap-2">
                     {EXTRAS.map((e) => (
-                      <Chip key={e.name} active={extras.includes(e.name)} onClick={() => setExtras(prev => prev.includes(e.name) ? prev.filter(x => x !== e.name) : [...prev, e.name])}>
+                      <Chip key={e.name} active={extras.includes(e.name)} onClick={() => toggleExtra(e.name)}>
                         {e.name} (+{money(e.price)})
                       </Chip>
                     ))}
@@ -371,7 +396,7 @@ export default function SelfOrderingPrototype() {
                           <div className="font-medium">{l.qty}× {l.item.name}</div>
                           <div className="text-sm text-neutral-600">
                             Soße: {l.custom.sauce} · {l.custom.salad}
-                            {l.custom.extras.length > 0 && (<>{" "}· Extras: {l.custom.extras.join(", ")}</>)}
+                            {l.custom.extras.length > 0 && (<>{' '}· Extras: {l.custom.extras.join(', ')}</>)}
                           </div>
                         </div>
                         <button className="text-red-600 text-sm" onClick={() => removeLine(l.id)}>Entfernen</button>
@@ -381,14 +406,14 @@ export default function SelfOrderingPrototype() {
 
                   <CartTotals lines={cart} />
 
-                  <button className="btn-primary w-full" onClick={() => setView("cart")}>Zur Kasse</button>
+                  <button className="btn-primary w-full" onClick={() => setView('cart')}>Zur Kasse</button>
                 </div>
               )}
             </aside>
           </div>
         )}
 
-        {view === "cart" && (
+        {view === 'cart' && (
           <section className="max-w-2xl mx-auto">
             <h2 className="text-2xl font-semibold mb-4">Kasse</h2>
             {cart.length === 0 ? (
@@ -402,7 +427,7 @@ export default function SelfOrderingPrototype() {
                         <div className="font-medium">{l.qty}× {l.item.name}</div>
                         <div className="text-sm text-neutral-600">
                           Soße: {l.custom.sauce} · {l.custom.salad}
-                          {l.custom.extras.length > 0 && (<> · Extras: {l.custom.extras.join(", ")}</>)}
+                          {l.custom.extras.length > 0 && (<> · Extras: {l.custom.extras.join(', ')}</>)}
                         </div>
                       </div>
                       <div className="text-sm text-neutral-600">{money(lineTotal(l))}</div>
@@ -426,11 +451,11 @@ export default function SelfOrderingPrototype() {
           </section>
         )}
 
-        {view === "status" && (
-          <StatusView activeOrder={activeOrder} onBackToMenu={() => setView("menu")} />
+        {view === 'status' && (
+          <StatusView activeOrder={activeOrder} onBackToMenu={() => setView('menu')} />
         )}
 
-        {view === "kitchen" && (
+        {view === 'kitchen' && (
           <KitchenView
             orders={orders}
             onAdvance={(o) => {
@@ -444,10 +469,13 @@ export default function SelfOrderingPrototype() {
       <footer className="py-10 text-center text-sm text-neutral-500">
         Prototyp – keine echte Bezahlung. © {new Date().getFullYear()} Efendi Express
       </footer>
-
     </div>
   );
 }
+
+// =====================
+// Unterkomponenten & Helfer
+// =====================
 
 function lineTotal(l: CartLine) {
   const extrasPrice = l.custom.extras.reduce((s, name) => s + (EXTRAS.find((e) => e.name === name)?.price || 0), 0);
@@ -456,7 +484,7 @@ function lineTotal(l: CartLine) {
 
 function CartTotals({ lines }: { lines: CartLine[] }) {
   const subtotal = lines.reduce((s, l) => s + lineTotal(l), 0);
-  const service = 0; // could be e.g., 1.0
+  const service = 0; // z. B. Servicepauschale
   const total = subtotal + service;
   return (
     <div className="bg-white border rounded-2xl p-4 flex items-center justify-between">
@@ -474,7 +502,7 @@ function CartTotals({ lines }: { lines: CartLine[] }) {
 
 function Chip({ children, active, onClick }: { children: React.ReactNode; active?: boolean; onClick?: () => void }) {
   return (
-    <button className={`chip ${active ? "chip-active" : "border-neutral-300"}`} onClick={onClick}>
+    <button className={`chip ${active ? 'chip-active' : 'border-neutral-300'}`} onClick={onClick}>
       {children}
     </button>
   );
@@ -482,20 +510,20 @@ function Chip({ children, active, onClick }: { children: React.ReactNode; active
 
 function StatusBadge({ status }: { status: OrderStatus }) {
   const map: Record<OrderStatus, { label: string; cls: string }> = {
-    in_queue: { label: "In Warteschlange", cls: "bg-neutral-100 text-neutral-700" },
-    preparing: { label: "In Zubereitung", cls: "bg-amber-100 text-amber-800" },
-    ready: { label: "Abholbereit", cls: "bg-emerald-100 text-emerald-800" },
-    picked_up: { label: "Abgeholt", cls: "bg-blue-100 text-blue-800" },
+    in_queue: { label: 'In Warteschlange', cls: 'bg-neutral-100 text-neutral-700' },
+    preparing: { label: 'In Zubereitung', cls: 'bg-amber-100 text-amber-800' },
+    ready: { label: 'Abholbereit', cls: 'bg-emerald-100 text-emerald-800' },
+    picked_up: { label: 'Abgeholt', cls: 'bg-blue-100 text-blue-800' },
   };
   const { label, cls } = map[status];
   return <span className={`px-2 py-1 rounded-lg text-xs font-medium ${cls}`}>{label}</span>;
 }
 
 function nextStatus(s: OrderStatus): OrderStatus {
-  if (s === "in_queue") return "preparing";
-  if (s === "preparing") return "ready";
-  if (s === "ready") return "picked_up";
-  return "picked_up";
+  if (s === 'in_queue') return 'preparing';
+  if (s === 'preparing') return 'ready';
+  if (s === 'ready') return 'picked_up';
+  return 'picked_up';
 }
 
 function StatusView({ activeOrder, onBackToMenu }: { activeOrder: Order | null; onBackToMenu: () => void }) {
@@ -504,7 +532,8 @@ function StatusView({ activeOrder, onBackToMenu }: { activeOrder: Order | null; 
       <h2 className="text-2xl font-semibold mb-2">Bestellstatus</h2>
       {!activeOrder ? (
         <div className="text-neutral-600">
-          Du hast aktuell keine aktive Bestellung. <button className="text-emerald-700 underline" onClick={onBackToMenu}>Zurück zum Menü</button>
+          Du hast aktuell keine aktive Bestellung.{' '}
+          <button className="text-emerald-700 underline" onClick={onBackToMenu}>Zurück zum Menü</button>
         </div>
       ) : (
         <div className="space-y-4">
@@ -542,8 +571,8 @@ function StatusView({ activeOrder, onBackToMenu }: { activeOrder: Order | null; 
           <div className="bg-white border rounded-2xl p-4">
             <div className="text-sm text-neutral-600 mb-2">Hinweis</div>
             <p>
-              Du erhältst eine Benachrichtigung, sobald die Bestellung <b>abholbereit</b> ist. In diesem Prototyp kannst du
-              das im Menüpunkt <i>Küche (Demo)</i> simulieren.
+              Du erhältst eine Benachrichtigung, sobald die Bestellung <b>abholbereit</b> ist. Im Menüpunkt <i>Küche (Demo)</i>
+              kannst du das simulieren.
             </p>
           </div>
         </div>
@@ -552,11 +581,11 @@ function StatusView({ activeOrder, onBackToMenu }: { activeOrder: Order | null; 
   );
 }
 
-function KitchenView({ orders, onAdvance }: { orders: Order[]; onAdvance: (o: Order) => void; }) {
-  type FilterType = OrderStatus | "all";
-  const [filter, setFilter] = useState<FilterType>("all");
+function KitchenView({ orders, onAdvance }: { orders: Order[]; onAdvance: (o: Order) => void }) {
+  type FilterType = OrderStatus | 'all';
+  const [filter, setFilter] = useState<FilterType>('all');
 
-  const filtered = orders.filter((o) => (filter === "all" ? true : o.status === filter));
+  const filtered = orders.filter((o) => (filter === 'all' ? true : o.status === filter));
 
   return (
     <section className="max-w-4xl mx-auto">
