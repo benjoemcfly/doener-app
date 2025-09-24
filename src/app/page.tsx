@@ -104,9 +104,12 @@ function notifyReady(orderId: string) {
       icon: '/favicon.ico',
       tag: `ready-${orderId}`,
     });
-    if ('vibrate' in navigator) (navigator as any).vibrate?.([120, 70, 120]);
+    // ← NEU: Typsicher ohne "any"
+    const nav = navigator as Navigator & { vibrate?: (pattern: VibratePattern) => boolean };
+    nav.vibrate?.([120, 70, 120]);
   } catch {}
 }
+
 
 // ---- Server API helpers (Orders) ----
 async function apiCreateOrderFromCart(cart: CartLine[]): Promise<{ id: string; status: string }> {
