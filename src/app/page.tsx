@@ -224,9 +224,7 @@ export default function SelfOrderingPrototype() {
     return (selected.basePrice + extrasPrice) * qty;
   }, [selected, extras, qty]);
 
-  function toggleExtra(name: string) {
-    setExtras((prev) => (prev.includes(name) ? prev.filter((x) => x !== name) : [...prev, name]));
-  }
+
 
   function addToCart() {
     if (!selected) return;
@@ -620,8 +618,4 @@ function KitchenView({ orders, onAdvance }: { orders: Order[]; onAdvance: (o: Or
       )}
     </section>
   );
-}
-
-function tabBtn(active: boolean) {
-  return `px-3 py-1.5 rounded-xl border transition ${active ? "bg-neutral-900 text-white border-neutral-900" : "border-neutral-300 hover:bg-neutral-100"}`;
 }

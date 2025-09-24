@@ -1,4 +1,4 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { sql } from '@/lib/db';
 
 export const runtime = 'nodejs';
@@ -16,8 +16,8 @@ interface DbOrderRow {
   created_at: string;
 }
 
-export async function GET(_req: Request, ctx: { params: { id: string } }) {
-  const { id } = ctx.params;
+export async function GET(_req: NextRequest, context: { params: Promise<{ id: string }> }) {
+  const { id } = await context.params; // <- Next 15: params ist ein Promise
   try {
     const rows = await sql<DbOrderRow[]>`
       SELECT id, lines, total_cents, status, created_at
@@ -42,8 +42,8 @@ export async function GET(_req: Request, ctx: { params: { id: string } }) {
   }
 }
 
-export async function PATCH(req: Request, ctx: { params: { id: string } }) {
-  const { id } = ctx.params;
+export async function PATCH(req: NextRequest, context: { params: Promise<{ id: string }> }) {
+  const { id } = await context.params; // <- ebenso
   try {
     const body = (await req.json()) as { status: OrderStatus };
     const allowed: ReadonlyArray<OrderStatus> = ['in_queue', 'preparing', 'ready', 'picked_up'];
