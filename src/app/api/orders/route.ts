@@ -1,30 +1,13 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
-
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { sql } from '@/lib/db';
 
 export const runtime = 'nodejs';
 
 type OrderStatus = 'in_queue' | 'preparing' | 'ready' | 'picked_up';
 
-interface MenuItem {
-  id: string;
-  name: string;
-  basePrice: number;
-  description?: string;
-}
-interface Customization {
-  sauce: string;
-  salad: string;
-  extras: string[];
-}
-interface CartLine {
-  id: string;
-  item: MenuItem;
-  qty: number;
-  custom: Customization;
-}
-
+interface MenuItem { id: string; name: string; basePrice: number; description?: string }
+interface Customization { sauce: string; salad: string; extras: string[] }
+interface CartLine { id: string; item: MenuItem; qty: number; custom: Customization }
 interface DbOrderRow {
   id: string;
   lines: CartLine[];
@@ -33,18 +16,20 @@ interface DbOrderRow {
   created_at: string;
 }
 
-export async function GET(req: Request) {
+export async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url);
     const raw = searchParams.get('limit');
-    const limit = Number.isFinite(Number(raw)) ? Math.min(Math.max(parseInt(raw ?? '50', 10), 1), 200) : 50;
+    const parsed = raw ? parseInt(raw, 10) : 50;
+    const limit = Number.isFinite(parsed) ? Math.min(Math.max(parsed, 1), 200) : 50;
 
-    const rows = await sql<DbOrderRow[]>`
+    // ❌ KEIN sql<DbOrderRow[]> …  ✅ Ergebnis casten
+    const rows = (await sql`
       SELECT id, lines, total_cents, status, created_at
       FROM public.orders
       ORDER BY created_at DESC
       LIMIT ${limit}
-    `;
+    `) as DbOrderRow[];
 
     const out = rows.map(r => ({
       orderId: r.id,
@@ -61,10 +46,9 @@ export async function GET(req: Request) {
   }
 }
 
-export async function POST(req: Request) {
+export async function POST(req: NextRequest) {
   try {
     const body = (await req.json()) as { lines: CartLine[]; total_cents: number };
-
     const id = crypto.randomUUID();
     const status: OrderStatus = 'in_queue';
 
