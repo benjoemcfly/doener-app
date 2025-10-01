@@ -1,650 +1,589 @@
 'use client';
 
-import React, { useMemo, useState, useEffect, useRef } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
-// =====================
-// Types
-// =====================
+// ==========================
+// Typen
+// ==========================
+export type OrderStatus = 'in_queue' | 'preparing' | 'ready' | 'picked_up';
 
-type Sauce = 'Knoblauch' | 'Scharf' | 'Yoghurt' | 'Ohne';
-type Salad = 'Alles' | 'Ohne Zwiebeln' | 'Ohne Tomaten' | 'Ohne Salat';
-
-type ItemId = 'doener' | 'dueruem' | 'pide' | 'lahmacun';
-
-interface MenuItem {
-  id: ItemId;
+export type MenuItem = {
+  id: string;
   name: string;
-  basePrice: number;
-  description: string;
-}
+  price_cents: number;
+};
 
-interface Customization {
-  sauce: Sauce;
-  salad: Salad;
-  extras: string[]; // z.B. "Extra Käse"
-}
-
-interface CartLine {
-  id: string; // unique line id
-  item: MenuItem;
+export type OrderLine = {
+  id: string; // clientseitig generiert
+  item?: MenuItem | null;
   qty: number;
-  custom: Customization;
-}
+};
 
-type OrderStatus = 'in_queue' | 'preparing' | 'ready' | 'picked_up';
-
-interface Order {
-  orderId: string;
-  lines: CartLine[];
-  total: number;
+export type Order = {
+  id: string;
+  lines: OrderLine[];
+  total_cents: number;
   status: OrderStatus;
-  createdAt: string;
+  created_at?: string | null;
+  updated_at?: string | null;
+};
+
+// ==========================
+// Hilfsfunktionen
+// ==========================
+const formatPrice = (cents: number) =>
+  new Intl.NumberFormat('de-CH', { style: 'currency', currency: 'EUR' }).format(
+    (cents || 0) / 100,
+  );
+
+const nextStatus = (s: OrderStatus): OrderStatus =>
+  s === 'in_queue' ? 'preparing' : s === 'preparing' ? 'ready' : s === 'ready' ? 'picked_up' : 'picked_up';
+
+// stabile ID
+const nid = () => Math.random().toString(36).slice(2, 10);
+
+// ==========================
+// In‑Tab Ton + Vibration Hook (kein zusätzl. File nötig)
+// ==========================
+function useReadyFeedback() {
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const audioCtxRef = useRef<AudioContext | null>(null);
+  const [soundEnabled, setSoundEnabled] = useState(false);
+
+  useEffect(() => {
+    const a = new Audio('/ready.mp3');
+    a.preload = 'auto';
+    audioRef.current = a;
+  }, []);
+
+  const enableSound = useCallback(async () => {
+    try {
+      const Ctx = (window as any).AudioContext || (window as any).webkitAudioContext;
+      if (Ctx && !audioCtxRef.current) {
+        audioCtxRef.current = new Ctx();
+        await audioCtxRef.current.resume();
+      }
+      if (audioRef.current) {
+        await audioRef.current.play();
+        audioRef.current.pause();
+        audioRef.current.currentTime = 0;
+      }
+      setSoundEnabled(true);
+    } catch {
+      setSoundEnabled(true);
+    }
+  }, []);
+
+  const beep = useCallback(() => {
+    try {
+      const Ctx = (window as any).AudioContext || (window as any).webkitAudioContext;
+      if (!Ctx) return;
+      const ctx: AudioContext = audioCtxRef.current ?? new Ctx();
+      audioCtxRef.current = ctx;
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.value = 880;
+      gain.gain.value = 0.001;
+      osc.connect(gain).connect(ctx.destination);
+      const now = ctx.currentTime;
+      gain.gain.exponentialRampToValueAtTime(0.06, now + 0.02);
+      osc.start(now);
+      gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.4);
+      osc.stop(now + 0.42);
+    } catch {}
+  }, []);
+
+  const trigger = useCallback(() => {
+    let kicked = false;
+    try {
+      if (audioRef.current) {
+        audioRef.current.currentTime = 0;
+        const p = audioRef.current.play();
+        if (p) p.catch(() => {});
+        kicked = true;
+      }
+    } catch {}
+    if (!kicked) beep();
+    try {
+      navigator.vibrate?.([220, 80, 260]);
+    } catch {}
+  }, [beep]);
+
+  return { soundEnabled, enableSound, trigger };
 }
 
-// =====================
-// Statisches Menü + Extras
-// =====================
-
+// ==========================
+// Demo‑Menü (Client‑seitig)
+// ==========================
 const MENU: MenuItem[] = [
-  {
-    id: 'doener',
-    name: 'Döner',
-    basePrice: 9.5,
-    description: 'Klassischer Döner mit Kalbfleisch oder Hähnchen, frisch vom Spieß.',
-  },
-  {
-    id: 'dueruem',
-    name: 'Dürüm',
-    basePrice: 10.5,
-    description: 'Gerolltes Fladenbrot, perfekt zum Mitnehmen.',
-  },
-  { id: 'pide', name: 'Pide', basePrice: 12, description: 'Ofenfrische Pide mit Käse oder Hackfleisch.' },
-  { id: 'lahmacun', name: 'Lahmacun', basePrice: 8.5, description: 'Dünner Fladen mit würzigem Belag.' },
+  { id: 'doener', name: 'Döner Kebab', price_cents: 850 },
+  { id: 'durum', name: 'Dürüm', price_cents: 900 },
+  { id: 'box', name: 'Döner Box', price_cents: 800 },
+  { id: 'lama', name: 'Lahmacun', price_cents: 700 },
 ];
 
-const EXTRAS = [
-  { name: 'Extra Käse', price: 1.5 },
-  { name: 'Extra Fleisch', price: 3 },
-  { name: 'Pommes im Döner', price: 1 },
-  { name: 'Jalapeños', price: 0.5 },
-] as const;
-
-// =====================
-// Utilities
-// =====================
-
-const money = (n: number) => n.toFixed(2) + ' CHF';
-const uuid = () => Math.random().toString(36).slice(2, 9);
-
-function saveLocal<T>(key: string, value: T) {
-  if (typeof window === 'undefined') return;
-  try { localStorage.setItem(key, JSON.stringify(value)); } catch {}
-}
-
-function readLocal<T>(key: string, fallback: T): T {
-  try {
-    if (typeof window === 'undefined') return fallback;
-    const raw = localStorage.getItem(key);
-    return raw ? (JSON.parse(raw) as T) : fallback;
-  } catch {
-    return fallback;
-  }
-}
-
-// =====================
-// Notification-Helpers (In-Tab)
-// =====================
-
-function canNotify() {
-  return typeof window !== 'undefined' && 'Notification' in window;
-}
-
-async function ensureNotifyPermission(): Promise<boolean> {
-  if (!canNotify()) return false;
-  if (Notification.permission === 'granted') return true;
-  if (Notification.permission === 'denied') return false;
-  const res = await Notification.requestPermission();
-  return res === 'granted';
-}
-
-function notifyReady(orderId: string) {
-  if (!canNotify()) return;
-  try {
-    new Notification('Deine Bestellung ist abholbereit', {
-      body: `Bestellnummer ${orderId}`,
-      icon: '/favicon.ico',
-      tag: `ready-${orderId}`, // vermeidet Duplikate
-    });
-    const nav = navigator as Navigator & { vibrate?: (pattern: VibratePattern) => boolean };
-    nav.vibrate?.([120, 70, 120]);
-  } catch {}
-}
-
-// =====================
-// Server-API Helpers
-// =====================
-
-async function apiCreateOrderFromCart(cart: CartLine[]): Promise<{ id: string; status: string }> {
-  const total_cents = cart.reduce((sum, l) => {
-    const extrasPrice = l.custom.extras.reduce(
-      (s, name) => s + (EXTRAS.find((e) => e.name === name)?.price || 0),
-      0,
-    );
-    const unit_cents = Math.round((l.item.basePrice + extrasPrice) * 100);
-    return sum + unit_cents * l.qty;
-  }, 0);
-
-  const res = await fetch('/api/orders', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    cache: 'no-store',
-    body: JSON.stringify({ lines: cart, total_cents }),
-  });
-  if (!res.ok) throw new Error('Bestellung fehlgeschlagen');
-  return res.json();
-}
-
-async function apiFetchOrders(): Promise<Order[]> {
-  const res = await fetch('/api/orders', { cache: 'no-store' });
-  if (!res.ok) throw new Error('Orders laden fehlgeschlagen');
-  return res.json();
-}
-
-async function apiFetchOrder(id: string): Promise<Order | null> {
-  const res = await fetch(`/api/orders/${id}`, { cache: 'no-store' });
-  if (!res.ok) return null;
-  return res.json();
-}
-
-async function apiUpdateOrderStatus(id: string, status: OrderStatus) {
-  const res = await fetch(`/api/orders/${id}`, {
-    method: 'PATCH',
-    headers: { 'Content-Type': 'application/json' },
-    cache: 'no-store',
-    body: JSON.stringify({ status }),
-  });
-  if (!res.ok) throw new Error('Status-Update fehlgeschlagen');
-}
-
-// =====================
+// ==========================
 // Hauptkomponente
-// =====================
+// ==========================
+export default function Page() {
+  const [tab, setTab] = useState<'menu' | 'checkout' | 'status' | 'kitchen'>('menu');
+  const [cart, setCart] = useState<OrderLine[]>([]);
+  const [customerEmail, setCustomerEmail] = useState('');
 
-export default function SelfOrderingPrototype() {
-  const [selected, setSelected] = useState<MenuItem | null>(MENU[0]);
-  const [sauce, setSauce] = useState<Sauce>('Knoblauch');
-  const [salad, setSalad] = useState<Salad>('Alles');
-  const [extras, setExtras] = useState<string[]>([]);
-  const [qty, setQty] = useState(1);
+  const [activeOrderId, setActiveOrderId] = useState<string | null>(null);
+  const [activeOrder, setActiveOrder] = useState<Order | null>(null);
 
-  const [cart, setCart] = useState<CartLine[]>(() => readLocal('cart', []));
-  const [orders, setOrders] = useState<Order[]>([]); // kommt aus DB (nicht lokal speichern)
-  const [view, setView] = useState<'menu' | 'cart' | 'status' | 'kitchen'>('menu');
-  const [activeOrderId, setActiveOrderId] = useState<string | null>(() => readLocal('activeOrderId', null));
+  const [kitchenOrders, setKitchenOrders] = useState<Order[]>([]);
 
-  const lastNotifiedReadyId = useRef<string | null>(null);
+  const alreadyNotifiedRef = useRef(false);
+  const { soundEnabled, enableSound, trigger } = useReadyFeedback();
 
-  // Persist nur cart + activeOrderId
-  useEffect(() => saveLocal('cart', cart), [cart]);
-  useEffect(() => saveLocal('activeOrderId', activeOrderId), [activeOrderId]);
-
-  // Beim Status-View um Berechtigung bitten
+  // Lokal gespeicherte Order‑ID wiederherstellen
   useEffect(() => {
-    if (view === 'status') void ensureNotifyPermission();
-  }, [view]);
+    try {
+      const saved = localStorage.getItem('activeOrderId');
+      if (saved) setActiveOrderId(saved);
+    } catch {}
+  }, []);
 
-  // Kitchen: alle 4s Liste neu laden
-  useEffect(() => {
-    if (view !== 'kitchen') return;
-    let alive = true;
-    const load = async () => {
-      try {
-        const rows = await apiFetchOrders();
-        if (alive) setOrders(rows);
-      } catch {}
+  // Total berechnen
+  const totalCents = useMemo(
+    () =>
+      cart.reduce((sum, l) => sum + (l.item?.price_cents || 0) * (l.qty || 0), 0),
+    [cart],
+  );
+
+  // ==========================
+  // Warenkorb‑Aktionen
+  // ==========================
+  const addToCart = useCallback((m: MenuItem) => {
+    setCart((prev) => {
+      const idx = prev.findIndex((l) => l.item?.id === m.id);
+      if (idx >= 0) {
+        const copy = [...prev];
+        copy[idx] = { ...copy[idx], qty: copy[idx].qty + 1 };
+        return copy;
+      }
+      return [...prev, { id: nid(), item: m, qty: 1 }];
+    });
+  }, []);
+
+  const removeLine = useCallback((id: string) => {
+    setCart((prev) => prev.filter((l) => (l.id ?? `${l.item?.id ?? 'item'}-x`) !== id));
+  }, []);
+
+  const adjustQty = useCallback((id: string, delta: number) => {
+    setCart((prev) =>
+      prev
+        .map((l) => (l.id === id ? { ...l, qty: Math.max(0, l.qty + delta) } : l))
+        .filter((l) => l.qty > 0),
+    );
+  }, []);
+
+  // ==========================
+  // Order erstellen
+  // ==========================
+  const createOrder = useCallback(async () => {
+    if (!cart.length) return;
+    const payload = {
+      lines: cart,
+      total_cents: totalCents,
+      customer_email: customerEmail.trim() || undefined,
     };
-    load();
-    const t = setInterval(load, 4000);
-    return () => { alive = false; clearInterval(t); };
-  }, [view]);
+    const res = await fetch('/api/orders', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) {
+      alert('Bestellung fehlgeschlagen');
+      return;
+    }
+    const data = (await res.json()) as { id: string };
+    setActiveOrderId(data.id);
+    try { localStorage.setItem('activeOrderId', data.id); } catch {}
+    setCart([]);
+    setTab('status');
+  }, [cart, totalCents, customerEmail]);
 
-  // Kunden-Status: alle 4s die aktive Bestellung nachladen + bei "ready" benachrichtigen
+  // ==========================
+  // Status‑Polling (alle 4s)
+  // ==========================
   useEffect(() => {
-    if (!activeOrderId || view !== 'status') return;
-    let alive = true;
+    if (!activeOrderId) return;
+    let stop = false;
+
     const tick = async () => {
       try {
-        const o = await apiFetchOrder(activeOrderId);
-        if (o && alive) {
-          setOrders((prev) => {
-            const i = prev.findIndex((x) => x.orderId === o.orderId);
-            if (i === -1) return [o, ...prev];
-            const copy = [...prev];
-            copy[i] = o;
-            return copy;
-          });
-          if (o.status === 'ready' && lastNotifiedReadyId.current !== o.orderId) {
-            notifyReady(o.orderId);
-            lastNotifiedReadyId.current = o.orderId;
+        const r = await fetch(`/api/orders/${activeOrderId}`, { cache: 'no-store' });
+        if (!r.ok) return;
+        const o = (await r.json()) as Order;
+        setActiveOrder((prev) => {
+          const prevStatus = prev?.status;
+          if (prevStatus !== 'ready' && o.status === 'ready' && !alreadyNotifiedRef.current) {
+            alreadyNotifiedRef.current = true;
+            // In‑Tab Notification
+            if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
+              try {
+                new Notification('Abholbereit!', {
+                  body: `Bestellung #${o.id} ist bereit.`,
+                });
+              } catch {}
+            }
+            // Ton + Vibration
+            trigger();
           }
-        }
+          return o;
+        });
       } catch {}
     };
+
+    // Sofort + Intervall
     tick();
-    const t = setInterval(tick, 4000);
-    return () => { alive = false; clearInterval(t); };
-  }, [activeOrderId, view]);
+    const id = setInterval(tick, 4000);
+    return () => { stop = true; clearInterval(id); };
+  }, [activeOrderId, trigger]);
 
-  const currentTotal = useMemo(() => {
-    if (!selected) return 0;
-    const extrasPrice = extras.reduce((sum, name) => sum + (EXTRAS.find((e) => e.name === name)?.price || 0), 0);
-    return (selected.basePrice + extrasPrice) * qty;
-  }, [selected, extras, qty]);
+  // ==========================
+  // Kitchen‑Polling (alle 4s)
+  // ==========================
+  useEffect(() => {
+    if (tab !== 'kitchen') return;
+    let stop = false;
 
-  function toggleExtra(name: string) {
-    setExtras((prev) => (prev.includes(name) ? prev.filter((x) => x !== name) : [...prev, name]));
-  }
-
-  function addToCart() {
-    if (!selected) return;
-    const line: CartLine = {
-      id: uuid(),
-      item: selected,
-      qty,
-      custom: { sauce, salad, extras: [...extras] },
+    const load = async () => {
+      try {
+        const r = await fetch('/api/orders', { cache: 'no-store' });
+        if (!r.ok) return;
+        const list = (await r.json()) as Order[];
+        if (!stop) setKitchenOrders(list);
+      } catch {}
     };
-    setCart((c) => [...c, line]);
-    setQty(1);
-    setExtras([]);
-  }
 
-  function removeLine(id: string) {
-    setCart((c) => c.filter((l) => l.id !== id));
-  }
+    load();
+    const id = setInterval(load, 4000);
+    return () => { stop = true; clearInterval(id); };
+  }, [tab]);
 
-  function placeOrder() {
-    if (cart.length === 0) return;
-    void ensureNotifyPermission(); // Kunde früh um Erlaubnis bitten
-    (async () => {
-      try {
-        const { id } = await apiCreateOrderFromCart(cart);
-        setActiveOrderId(id);
-        setCart([]);
-        setView('status');
-        setOrders(await apiFetchOrders());
-      } catch (e) {
-        console.error(e);
-        alert('Bestellung konnte nicht gespeichert werden.');
-      }
-    })();
-  }
+  // ==========================
+  // Kitchen: Status wechseln
+  // ==========================
+  const bumpStatus = useCallback(async (o: Order) => {
+    const ns = nextStatus(o.status);
+    const r = await fetch(`/api/orders/${o.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status: ns }),
+    });
+    if (!r.ok) alert('Statuswechsel fehlgeschlagen');
+    // restliches Polling holt den neuen Zustand
+  }, []);
 
-  function updateOrderStatus(orderId: string, next: OrderStatus) {
-    (async () => {
-      try {
-        await apiUpdateOrderStatus(orderId, next);
-        setOrders(await apiFetchOrders());
-      } catch (e) {
-        console.error(e);
-        alert('Status-Update fehlgeschlagen.');
-      }
-    })();
-  }
+  // ==========================
+  // Notifications‑Erlaubnis (Button)
+  // ==========================
+  const [notifGranted, setNotifGranted] = useState(
+    typeof Notification !== 'undefined' ? Notification.permission === 'granted' : false,
+  );
 
-  const activeOrder = orders.find((o) => o.orderId === activeOrderId) || null;
+  const askNotif = useCallback(async () => {
+    try {
+      if (typeof Notification === 'undefined') return;
+      const p = await Notification.requestPermission();
+      setNotifGranted(p === 'granted');
+    } catch {}
+  }, []);
 
+  // ==========================
+  // UI
+  // ==========================
   return (
-    <div className="min-h-screen bg-neutral-50 text-neutral-900">
-      <header className="sticky top-0 z-20 bg-white/80 backdrop-blur border-b border-neutral-200">
-        <div className="max-w-5xl mx-auto px-4 py-3 flex items-center justify-between">
-          <div className="font-bold text-xl">🥙 Efendi Express</div>
-          <nav className="flex gap-2">
-            <button className={`chip ${view === 'menu' ? 'chip-active' : ''}`} onClick={() => setView('menu')}>Menü</button>
-            <button className={`chip ${view === 'cart' ? 'chip-active' : ''}`} onClick={() => setView('cart')}>Warenkorb ({cart.length})</button>
-            <button className={`chip ${view === 'status' ? 'chip-active' : ''}`} onClick={() => setView('status')}>Status</button>
-            <button className={`chip ${view === 'kitchen' ? 'chip-active' : ''}`} onClick={() => setView('kitchen')}>Kitchen</button>
-          </nav>
+    <div className="mx-auto max-w-3xl p-4">
+      <h1 className="text-2xl font-semibold">Döner Self‑Ordering</h1>
+
+      {/* Tabs */}
+      <div className="mt-4 flex gap-2">
+        {([
+          ['menu', 'Menü'] as const,
+          ['checkout', 'Kasse'] as const,
+          ['status', 'Status'] as const,
+          ['kitchen', 'Kitchen'] as const,
+        ]).map(([key, label]) => (
+          <button
+            key={key}
+            onClick={() => setTab(key as any)}
+            className={`rounded-full px-4 py-2 text-sm shadow ${
+              tab === key ? 'bg-emerald-600 text-white' : 'bg-white text-gray-700'
+            }`}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {/* Menü */}
+      {tab === 'menu' && (
+        <div className="mt-6 grid grid-cols-1 gap-3 sm:grid-cols-2">
+          {MENU.map((m, i) => (
+            <div key={m.id} className="rounded-2xl border p-4 shadow-sm">
+              <div className="font-medium">{m.name}</div>
+              <div className="text-sm text-gray-600">{formatPrice(m.price_cents)}</div>
+              <button
+                onClick={() => addToCart(m)}
+                className="mt-3 rounded-lg bg-emerald-600 px-3 py-1.5 text-white"
+              >
+                In den Warenkorb
+              </button>
+            </div>
+          ))}
+
+          {/* Warenkorb rechts/unterhalb */}
+          <div className="col-span-1 sm:col-span-2">
+            <h2 className="mt-6 text-lg font-semibold">Warenkorb</h2>
+            <div className="mt-2 divide-y rounded-2xl border bg-white">
+              {cart.length === 0 && (
+                <div className="p-4 text-sm text-gray-500">Noch leer.</div>
+              )}
+              {cart.map((l, i) => (
+                <div
+                  key={l.id ?? `${l.item?.id ?? 'item'}-${i}`}
+                  className="flex items-center justify-between gap-2 p-3"
+                >
+                  <div className="truncate">
+                    <div className="font-medium">{l.item?.name ?? 'Position'}</div>
+                    <div className="text-sm text-gray-500">{formatPrice(l.item?.price_cents || 0)}</div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => adjustQty(l.id, -1)}
+                      className="rounded-full border px-2 py-1"
+                      aria-label="Menge verringern"
+                    >
+                      −
+                    </button>
+                    <div className="w-6 text-center tabular-nums">{l.qty}</div>
+                    <button
+                      onClick={() => adjustQty(l.id, +1)}
+                      className="rounded-full border px-2 py-1"
+                      aria-label="Menge erhöhen"
+                    >
+                      +
+                    </button>
+                    <button
+                      onClick={() => removeLine(l.id)}
+                      className="rounded-md border px-2 py-1 text-sm"
+                    >
+                      Entfernen
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div className="mt-3 flex items-center justify-between">
+              <div className="text-base font-medium">Summe</div>
+              <div className="text-base font-semibold">{formatPrice(totalCents)}</div>
+            </div>
+            <div className="mt-4 flex flex-col gap-2 sm:flex-row">
+              <input
+                type="email"
+                value={customerEmail}
+                onChange={(e) => setCustomerEmail(e.target.value)}
+                placeholder="E‑Mail (optional, für Ready‑Mail)"
+                className="w-full rounded-lg border px-3 py-2"
+              />
+              <button
+                onClick={() => setTab('checkout')}
+                className="rounded-lg bg-sky-600 px-4 py-2 text-white"
+              >
+                Zur Kasse
+              </button>
+            </div>
+          </div>
         </div>
-      </header>
+      )}
 
-      <main className="max-w-5xl mx-auto px-4 py-8 space-y-10">
-        {view === 'menu' && (
-          <div className="grid md:grid-cols-2 gap-6">
-            <section>
-              <h2 className="text-2xl font-semibold mb-3">Gericht wählen</h2>
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                {MENU.map((m) => (
-                  <button
-                    key={m.id}
-                    className={`border rounded-2xl p-3 text-left hover:shadow transition ${
-                      selected?.id === m.id ? 'border-emerald-500 ring-2 ring-emerald-200' : 'border-neutral-200'
-                    }`}
-                    onClick={() => setSelected(m)}
-                  >
-                    <div className="font-medium">{m.name}</div>
-                    <div className="text-sm text-neutral-600">{m.description}</div>
-                    <div className="mt-2 font-semibold">{money(m.basePrice)}</div>
-                  </button>
-                ))}
+      {/* Kasse */}
+      {tab === 'checkout' && (
+        <div className="mt-6">
+          <h2 className="text-lg font-semibold">Kasse</h2>
+          <div className="mt-2 rounded-2xl border bg-white p-4">
+            <div className="text-sm text-gray-700">
+              Bitte überprüfe deine Bestellung. Du kannst optional eine E‑Mail angeben, um beim Status
+              <span className="rounded bg-gray-100 px-1 py-0.5">ready</span> zusätzlich eine Mail zu erhalten.
+            </div>
+            <div className="mt-3 divide-y">
+              {cart.map((l, i) => (
+                <div key={l.id ?? `${l.item?.id ?? 'item'}-${i}` } className="flex justify-between py-2 text-sm">
+                  <div>{l.qty}× {l.item?.name}</div>
+                  <div>{formatPrice((l.item?.price_cents || 0) * l.qty)}</div>
+                </div>
+              ))}
+            </div>
+            <div className="mt-4 flex items-center justify-between border-t pt-3">
+              <div className="text-base font-medium">Summe</div>
+              <div className="text-base font-semibold">{formatPrice(totalCents)}</div>
+            </div>
+            <div className="mt-4 flex flex-col gap-2 sm:flex-row">
+              <input
+                type="email"
+                value={customerEmail}
+                onChange={(e) => setCustomerEmail(e.target.value)}
+                placeholder="E‑Mail (optional)"
+                className="w-full rounded-lg border px-3 py-2"
+              />
+              <button
+                onClick={createOrder}
+                disabled={cart.length === 0}
+                className="rounded-lg bg-emerald-600 px-4 py-2 text-white disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Bestellung abschicken
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Status */}
+      {tab === 'status' && (
+        <div className="mt-6">
+          <h2 className="text-lg font-semibold">Bestell‑Status</h2>
+          {!activeOrderId && (
+            <div className="mt-2 rounded-2xl border bg-white p-4">
+              <div className="text-sm text-gray-600">
+                Noch keine aktive Bestellung gefunden. Du kannst eine Order‑ID eingeben, um den Status zu
+                verfolgen.
               </div>
-
-              <h2 className="text-2xl font-semibold mt-8 mb-3">Anpassungen</h2>
-              <div className="space-y-4">
-                <div>
-                  <div className="text-sm text-neutral-600 mb-1">Soße</div>
-                  <div className="flex flex-wrap gap-2">
-                    {(['Knoblauch', 'Scharf', 'Yoghurt', 'Ohne'] as Sauce[]).map((s) => (
-                      <Chip key={s} active={sauce === s} onClick={() => setSauce(s)}>
-                        {s}
-                      </Chip>
-                    ))}
-                  </div>
-                </div>
-
-                <div>
-                  <div className="text-sm text-neutral-600 mb-1">Salat</div>
-                  <div className="flex flex-wrap gap-2">
-                    {(['Alles', 'Ohne Zwiebeln', 'Ohne Tomaten', 'Ohne Salat'] as Salad[]).map((s) => (
-                      <Chip key={s} active={salad === s} onClick={() => setSalad(s)}>
-                        {s}
-                      </Chip>
-                    ))}
-                  </div>
-                </div>
-
-                <div>
-                  <div className="text-sm text-neutral-600 mb-1">Extras</div>
-                  <div className="flex flex-wrap gap-2">
-                    {EXTRAS.map((e) => (
-                      <Chip key={e.name} active={extras.includes(e.name)} onClick={() => toggleExtra(e.name)}>
-                        {e.name} (+{money(e.price)})
-                      </Chip>
-                    ))}
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-3">
-                  <div className="text-sm text-neutral-600">Menge</div>
-                  <div className="inline-flex items-center border rounded-xl overflow-hidden">
-                    <button className="px-3 py-1" onClick={() => setQty((q) => Math.max(1, q - 1))}>−</button>
-                    <div className="px-4 py-1 font-medium">{qty}</div>
-                    <button className="px-3 py-1" onClick={() => setQty((q) => q + 1)}>+</button>
-                  </div>
-                </div>
-
-                <div className="flex items-center justify-between bg-white border rounded-2xl p-4">
-                  <div>
-                    <div className="text-neutral-600 text-sm">Zwischensumme</div>
-                    <div className="text-xl font-semibold">{money(currentTotal)}</div>
-                  </div>
-                  <button className="btn-primary" onClick={addToCart}>Zum Warenkorb hinzufügen</button>
-                </div>
-              </div>
-            </section>
-
-            <aside className="bg-white border rounded-2xl p-4 h-fit sticky top-20">
-              <h3 className="text-xl font-semibold mb-3">Warenkorb</h3>
-              {cart.length === 0 ? (
-                <div className="text-neutral-500">Noch keine Artikel im Warenkorb.</div>
-              ) : (
-                <div className="space-y-3">
-                  {cart.map((l, i) => (
-                    <div key={l.id ?? `${l.item?.id ?? 'item'}-${i}`} className="border rounded-xl p-3">
-                      <div className="flex items-start justify-between gap-3">
-                        <div>
-                          <div className="font-medium">{l.qty}× {l.item.name}</div>
-                          <div className="text-sm text-neutral-600">
-                            Soße: {l.custom.sauce} · {l.custom.salad}
-                            {l.custom.extras.length > 0 && (<>{' '}· Extras: {l.custom.extras.join(', ')}</>)}
-                          </div>
-                        </div>
-                        <button className="text-red-600 text-sm" onClick={() => removeLine(l.id)}>Entfernen</button>
-                      </div>
-                    </div>
-                  ))}
-
-                  <CartTotals lines={cart} />
-
-                  <button className="btn-primary w-full" onClick={() => setView('cart')}>Zur Kasse</button>
+              <ManualOrderId onPick={(id) => { setActiveOrderId(id); try { localStorage.setItem('activeOrderId', id); } catch {} }} />
+            </div>
+          )}
+          {activeOrderId && (
+            <div className="mt-3 rounded-2xl border bg-white p-4">
+              <div className="text-sm text-gray-600">Order‑ID: <span className="font-mono">{activeOrderId}</span></div>
+              <div className="mt-2 text-base">Status: <StatusBadge s={activeOrder?.status} /></div>
+              {activeOrder?.status === 'ready' && (
+                <div className="mt-3 rounded-lg bg-emerald-50 p-3 text-emerald-800">
+                  Abholbereit! Bitte zur Theke kommen und die Bestellnummer nennen.
                 </div>
               )}
-            </aside>
-          </div>
-        )}
+              <div className="mt-4 flex flex-wrap gap-2">
+                {!notifGranted && (
+                  <button onClick={askNotif} className="rounded-lg border px-3 py-1.5 text-sm">
+                    Push‑Popup erlauben
+                  </button>
+                )}
+                {!soundEnabled && (
+                  <button onClick={enableSound} className="rounded-lg border px-3 py-1.5 text-sm">
+                    🔔 Ton aktivieren
+                  </button>
+                )}
+                <button
+                  onClick={() => {
+                    setActiveOrderId(null);
+                    try { localStorage.removeItem('activeOrderId'); } catch {}
+                    setActiveOrder(null);
+                  }}
+                  className="rounded-lg border px-3 py-1.5 text-sm"
+                >
+                  Andere Bestellung verfolgen
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
-        {view === 'cart' && (
-          <section className="max-w-2xl mx-auto">
-            <h2 className="text-2xl font-semibold mb-4">Kasse</h2>
-            {cart.length === 0 ? (
-              <div className="text-neutral-600">Dein Warenkorb ist leer.</div>
-            ) : (
-              <div className="space-y-4">
-                {cart.map((l, i) => (
-                  <div key={l.id ?? `${l.item?.id ?? 'item'}-${i}`} className="border rounded-xl p-3">
-                    <div className="flex items-start justify-between gap-3">
-                      <div>
-                        <div className="font-medium">{l.qty}× {l.item.name}</div>
-                        <div className="text-sm text-neutral-600">
-                          Soße: {l.custom.sauce} · {l.custom.salad}
-                          {l.custom.extras.length > 0 && (<> · Extras: {l.custom.extras.join(', ')}</>)}
-                        </div>
-                      </div>
-                      <div className="text-sm text-neutral-600">{money(lineTotal(l))}</div>
+      {/* Kitchen */}
+      {tab === 'kitchen' && (
+        <div className="mt-6">
+          <h2 className="text-lg font-semibold">Kitchen‑Dashboard</h2>
+          <div className="mt-3 grid grid-cols-1 gap-3">
+            {kitchenOrders.length === 0 && (
+              <div className="rounded-2xl border bg-white p-4 text-sm text-gray-500">Keine Bestellungen.</div>
+            )}
+            {kitchenOrders.map((o) => (
+              <div key={o.id} className="rounded-2xl border bg-white p-4">
+                <div className="flex items-center justify-between">
+                  <div className="text-sm text-gray-600">ID: <span className="font-mono">{o.id}</span></div>
+                  <StatusBadge s={o.status} />
+                </div>
+                <div className="mt-2 divide-y">
+                  {o.lines.map((l, i) => (
+                    <div key={l.id ?? `${l.item?.id ?? 'item'}-${i}`} className="flex items-center justify-between py-2 text-sm">
+                      <div>{l.qty}× {l.item?.name || 'Position'}</div>
+                      <div className="text-gray-500">{formatPrice((l.item?.price_cents || 0) * l.qty)}</div>
                     </div>
-                  </div>
-                ))}
-
-                <CartTotals lines={cart} />
-
-                <div className="bg-white border rounded-2xl p-4">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <div className="text-sm text-neutral-600">Bezahlung</div>
-                      <div className="font-medium">(Demo) Vor-Ort oder Online</div>
-                    </div>
-                    <button className="btn-primary" onClick={placeOrder}>Bestellung abschicken</button>
-                  </div>
+                  ))}
+                </div>
+                <div className="mt-3 flex items-center justify-between border-t pt-3">
+                  <div className="text-sm font-medium">Summe</div>
+                  <div className="text-sm font-semibold">{formatPrice(o.total_cents)}</div>
+                </div>
+                <div className="mt-3 flex gap-2">
+                  {o.status !== 'picked_up' && (
+                    <button
+                      onClick={() => bumpStatus(o)}
+                      className="rounded-lg bg-emerald-600 px-3 py-1.5 text-white"
+                    >
+                      Nächster Status → {nextStatus(o.status)}
+                    </button>
+                  )}
                 </div>
               </div>
-            )}
-          </section>
-        )}
-
-        {view === 'status' && (
-          <StatusView activeOrder={activeOrder} onBackToMenu={() => setView('menu')} />
-        )}
-
-        {view === 'kitchen' && (
-          <KitchenView
-            orders={orders}
-            onAdvance={(o) => {
-              const next = nextStatus(o.status);
-              updateOrderStatus(o.orderId, next);
-            }}
-          />
-        )}
-      </main>
-
-      <footer className="py-10 text-center text-sm text-neutral-500">
-        Prototyp – keine echte Bezahlung. © {new Date().getFullYear()} Efendi Express
-      </footer>
-    </div>
-  );
-}
-
-// =====================
-// Unterkomponenten & Helfer
-// =====================
-
-function lineTotal(l: CartLine) {
-  const extrasPrice = l.custom.extras.reduce((s, name) => s + (EXTRAS.find((e) => e.name === name)?.price || 0), 0);
-  return (l.item.basePrice + extrasPrice) * l.qty;
-}
-
-function CartTotals({ lines }: { lines: CartLine[] }) {
-  const subtotal = lines.reduce((s, l) => s + lineTotal(l), 0);
-  const service = 0; // z. B. Servicepauschale
-  const total = subtotal + service;
-  return (
-    <div className="bg-white border rounded-2xl p-4 flex items-center justify-between">
-      <div>
-        <div className="text-sm text-neutral-600">Zwischensumme</div>
-        <div className="font-semibold">{money(subtotal)}</div>
-      </div>
-      <div>
-        <div className="text-sm text-neutral-600">Gesamt</div>
-        <div className="text-xl font-semibold">{money(total)}</div>
-      </div>
-    </div>
-  );
-}
-
-function Chip({ children, active, onClick }: { children: React.ReactNode; active?: boolean; onClick?: () => void }) {
-  return (
-    <button className={`chip ${active ? 'chip-active' : 'border-neutral-300'}`} onClick={onClick}>
-      {children}
-    </button>
-  );
-}
-
-function StatusBadge({ status }: { status: OrderStatus }) {
-  const map: Record<OrderStatus, { label: string; cls: string }> = {
-    in_queue: { label: 'In Warteschlange', cls: 'bg-neutral-100 text-neutral-700' },
-    preparing: { label: 'In Zubereitung', cls: 'bg-amber-100 text-amber-800' },
-    ready: { label: 'Abholbereit', cls: 'bg-emerald-100 text-emerald-800' },
-    picked_up: { label: 'Abgeholt', cls: 'bg-blue-100 text-blue-800' },
-  };
-  const { label, cls } = map[status];
-  return <span className={`px-2 py-1 rounded-lg text-xs font-medium ${cls}`}>{label}</span>;
-}
-
-function nextStatus(s: OrderStatus): OrderStatus {
-  if (s === 'in_queue') return 'preparing';
-  if (s === 'preparing') return 'ready';
-  if (s === 'ready') return 'picked_up';
-  return 'picked_up';
-}
-
-function StatusView({ activeOrder, onBackToMenu }: { activeOrder: Order | null; onBackToMenu: () => void }) {
-  return (
-    <section className="max-w-2xl mx-auto">
-      <h2 className="text-2xl font-semibold mb-2">Bestellstatus</h2>
-      {!activeOrder ? (
-        <div className="text-neutral-600">
-          Du hast aktuell keine aktive Bestellung.{' '}
-          <button className="text-emerald-700 underline" onClick={onBackToMenu}>Zurück zum Menü</button>
-        </div>
-      ) : (
-        <div className="space-y-4">
-          <div className="bg-white border rounded-2xl p-4 flex items-center justify-between">
-            <div>
-              <div className="text-sm text-neutral-600">Bestellnummer</div>
-              <div className="text-xl font-semibold">{activeOrder.orderId}</div>
-            </div>
-            <StatusBadge status={activeOrder.status} />
-          </div>
-
-          <div className="bg-white border rounded-2xl p-4">
-            <div className="text-sm text-neutral-600 mb-2">Zusammenfassung</div>
-            <ul className="space-y-2">
-              {activeOrder.lines.map((l, i) => (
-                <li key={l.id ?? `${l.item?.id ?? 'item'}-${i}`} className="flex items-start justify-between">
-                  <div>
-                    <div className="font-medium">{l.qty}× {l.item.name}</div>
-                    <div className="text-sm text-neutral-600">
-                      Soße: {l.custom.sauce} · {l.custom.salad}
-                      {l.custom.extras.length > 0 && <> · Extras: {l.custom.extras.join(', ')}</>}
-                    </div>
-                  </div>
-                  <div className="text-sm text-neutral-600">{money(lineTotal(l))}</div>
-                </li>
-              ))}
-            </ul>
-
-            <div className="mt-3 flex items-center justify-between border-t pt-3">
-              <div className="font-medium">Gesamt</div>
-              <div className="text-xl font-semibold">{money(activeOrder.total)}</div>
-            </div>
-          </div>
-
-          <div className="bg-white border rounded-2xl p-4">
-            <div className="text-sm text-neutral-600 mb-2">Hinweis</div>
-            <p>
-              Du erhältst eine Benachrichtigung, sobald die Bestellung <b>abholbereit</b> ist. Im Menüpunkt <i>Küche (Demo)</i>
-              kannst du das simulieren.
-            </p>
-          </div>
-        </div>
-      )}
-    </section>
-  );
-}
-
-function KitchenView({ orders, onAdvance }: { orders: Order[]; onAdvance: (o: Order) => void }) {
-  type FilterType = OrderStatus | 'all';
-  const [filter, setFilter] = useState<FilterType>('all');
-
-  const filtered = orders.filter((o) => (filter === 'all' ? true : o.status === filter));
-
-  return (
-    <section className="max-w-4xl mx-auto">
-      <div className="flex items-center justify-between mb-3">
-        <h2 className="text-2xl font-semibold">Küchen-Dashboard (Demo)</h2>
-        <div className="flex items-center gap-2 text-sm">
-          <span>Filter:</span>
-          <select className="border rounded-lg px-2 py-1" value={filter} onChange={(e) => setFilter(e.target.value as FilterType)}>
-            <option value="all">Alle</option>
-            <option value="in_queue">Warteschlange</option>
-            <option value="preparing">In Zubereitung</option>
-            <option value="ready">Abholbereit</option>
-            <option value="picked_up">Abgeholt</option>
-          </select>
-        </div>
-      </div>
-
-      {filtered.length === 0 ? (
-        <div className="text-neutral-600">Keine Bestellungen.</div>
-      ) : (
-        <div className="grid md:grid-cols-2 gap-4">
-          <AnimatePresence>
-            {filtered.map((o) => (
-              <motion.div
-                key={o.orderId}
-                layout
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -10 }}
-                className="bg-white border rounded-2xl p-4"
-              >
-                <div className="flex items-start justify-between">
-                  <div>
-                    <div className="text-sm text-neutral-600">Bestellung</div>
-                    <div className="text-xl font-semibold">{o.orderId}</div>
-                  </div>
-                  <StatusBadge status={o.status} />
-                </div>
-
-                <ul className="mt-2 text-sm text-neutral-700 space-y-1">
-                  {o.lines.map((l, i) => (
-                    <li key={l.id ?? `${l.item?.id ?? 'item'}-${i}`}>
-                      {l.qty}× {l.item.name}
-                      {l.custom.extras.length > 0 && (
-                        <span className="text-neutral-500"> · {l.custom.extras.join(', ')}</span>
-                      )}
-                    </li>
-                  ))}
-                </ul>
-
-                <div className="mt-3 flex items-center justify-between">
-                  <div className="font-medium">Gesamt: {money(o.total)}</div>
-                  <button className="btn-primary" onClick={() => onAdvance(o)}>Nächster Status</button>
-                </div>
-              </motion.div>
             ))}
-          </AnimatePresence>
+          </div>
         </div>
       )}
-    </section>
+
+      {/* Floating Ton‑Button (als zusätzliche Option) */}
+      {!soundEnabled && (
+        <button
+          onClick={enableSound}
+          className="fixed bottom-4 right-4 hidden rounded-full bg-emerald-600 px-4 py-2 text-white shadow-lg sm:block"
+          aria-label="Benachrichtigungs‑Ton aktivieren"
+        >
+          🔔 Ton aktivieren
+        </button>
+      )}
+    </div>
+  );
+}
+
+// ==========================
+// Kleinere UI‑Bausteine
+// ==========================
+function StatusBadge({ s }: { s?: OrderStatus | null }) {
+  const cls =
+    s === 'ready'
+      ? 'bg-emerald-100 text-emerald-700'
+      : s === 'preparing'
+      ? 'bg-amber-100 text-amber-700'
+      : s === 'picked_up'
+      ? 'bg-gray-100 text-gray-700'
+      : 'bg-sky-100 text-sky-700';
+  return (
+    <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs ${cls}`}>
+      {s ?? '—'}
+    </span>
+  );
+}
+
+function ManualOrderId({ onPick }: { onPick: (id: string) => void }) {
+  const [v, setV] = useState('');
+  return (
+    <div className="mt-3 flex gap-2">
+      <input
+        value={v}
+        onChange={(e) => setV(e.target.value)}
+        placeholder="Order‑ID eingeben"
+        className="flex-1 rounded-lg border px-3 py-2"
+      />
+      <button
+        onClick={() => v && onPick(v.trim())}
+        className="rounded-lg bg-sky-600 px-3 py-2 text-white"
+      >
+        Laden
+      </button>
+    </div>
   );
 }
