@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useReadyFeedback } from '@/src/hooks/useReadyFeedback';
+import { useReadyFeedback } from '@/hooks/useReadyFeedback';
 
 // ==========================
 // Typen
