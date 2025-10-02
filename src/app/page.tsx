@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useReadyFeedback } from '@/src/hooks/useReadyFeedback';
 
 // ==========================
 // Typen
@@ -32,86 +33,13 @@ export type Order = {
 // Hilfsfunktionen
 // ==========================
 const formatPrice = (cents: number) =>
-  new Intl.NumberFormat('de-CH', { style: 'currency', currency: 'EUR' }).format(
-    (cents || 0) / 100,
-  );
+  new Intl.NumberFormat('de-CH', { style: 'currency', currency: 'EUR' }).format((cents || 0) / 100);
 
 const nextStatus = (s: OrderStatus): OrderStatus =>
   s === 'in_queue' ? 'preparing' : s === 'preparing' ? 'ready' : s === 'ready' ? 'picked_up' : 'picked_up';
 
 // stabile ID
 const nid = () => Math.random().toString(36).slice(2, 10);
-
-// ==========================
-// In‑Tab Ton + Vibration Hook (kein zusätzl. File nötig)
-// ==========================
-function useReadyFeedback() {
-  const audioRef = useRef<HTMLAudioElement | null>(null);
-  const audioCtxRef = useRef<AudioContext | null>(null);
-  const [soundEnabled, setSoundEnabled] = useState(false);
-
-  useEffect(() => {
-    const a = new Audio('/ready.mp3');
-    a.preload = 'auto';
-    audioRef.current = a;
-  }, []);
-
-  const enableSound = useCallback(async () => {
-    try {
-      const Ctx = (window as any).AudioContext || (window as any).webkitAudioContext;
-      if (Ctx && !audioCtxRef.current) {
-        audioCtxRef.current = new Ctx();
-        await audioCtxRef.current.resume();
-      }
-      if (audioRef.current) {
-        await audioRef.current.play();
-        audioRef.current.pause();
-        audioRef.current.currentTime = 0;
-      }
-      setSoundEnabled(true);
-    } catch {
-      setSoundEnabled(true);
-    }
-  }, []);
-
-  const beep = useCallback(() => {
-    try {
-      const Ctx = (window as any).AudioContext || (window as any).webkitAudioContext;
-      if (!Ctx) return;
-      const ctx: AudioContext = audioCtxRef.current ?? new Ctx();
-      audioCtxRef.current = ctx;
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-      osc.type = 'sine';
-      osc.frequency.value = 880;
-      gain.gain.value = 0.001;
-      osc.connect(gain).connect(ctx.destination);
-      const now = ctx.currentTime;
-      gain.gain.exponentialRampToValueAtTime(0.06, now + 0.02);
-      osc.start(now);
-      gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.4);
-      osc.stop(now + 0.42);
-    } catch {}
-  }, []);
-
-  const trigger = useCallback(() => {
-    let kicked = false;
-    try {
-      if (audioRef.current) {
-        audioRef.current.currentTime = 0;
-        const p = audioRef.current.play();
-        if (p) p.catch(() => {});
-        kicked = true;
-      }
-    } catch {}
-    if (!kicked) beep();
-    try {
-      navigator.vibrate?.([220, 80, 260]);
-    } catch {}
-  }, [beep]);
-
-  return { soundEnabled, enableSound, trigger };
-}
 
 // ==========================
 // Demo‑Menü (Client‑seitig)
@@ -126,8 +54,11 @@ const MENU: MenuItem[] = [
 // ==========================
 // Hauptkomponente
 // ==========================
+const tabs = ['menu', 'checkout', 'status', 'kitchen'] as const;
+type Tab = typeof tabs[number];
+
 export default function Page() {
-  const [tab, setTab] = useState<'menu' | 'checkout' | 'status' | 'kitchen'>('menu');
+  const [tab, setTab] = useState<Tab>('menu');
   const [cart, setCart] = useState<OrderLine[]>([]);
   const [customerEmail, setCustomerEmail] = useState('');
 
@@ -149,8 +80,7 @@ export default function Page() {
 
   // Total berechnen
   const totalCents = useMemo(
-    () =>
-      cart.reduce((sum, l) => sum + (l.item?.price_cents || 0) * (l.qty || 0), 0),
+    () => cart.reduce((sum, l) => sum + (l.item?.price_cents || 0) * (l.qty || 0), 0),
     [cart],
   );
 
@@ -174,10 +104,9 @@ export default function Page() {
   }, []);
 
   const adjustQty = useCallback((id: string, delta: number) => {
-    setCart((prev) =>
-      prev
-        .map((l) => (l.id === id ? { ...l, qty: Math.max(0, l.qty + delta) } : l))
-        .filter((l) => l.qty > 0),
+    setCart((prev) => prev
+      .map((l) => (l.id === id ? { ...l, qty: Math.max(0, l.qty + delta) } : l))
+      .filter((l) => l.qty > 0),
     );
   }, []);
 
@@ -202,7 +131,9 @@ export default function Page() {
     }
     const data = (await res.json()) as { id: string };
     setActiveOrderId(data.id);
-    try { localStorage.setItem('activeOrderId', data.id); } catch {}
+    try {
+      localStorage.setItem('activeOrderId', data.id);
+    } catch {}
     setCart([]);
     setTab('status');
   }, [cart, totalCents, customerEmail]);
@@ -212,7 +143,6 @@ export default function Page() {
   // ==========================
   useEffect(() => {
     if (!activeOrderId) return;
-    let stop = false;
 
     const tick = async () => {
       try {
@@ -223,15 +153,11 @@ export default function Page() {
           const prevStatus = prev?.status;
           if (prevStatus !== 'ready' && o.status === 'ready' && !alreadyNotifiedRef.current) {
             alreadyNotifiedRef.current = true;
-            // In‑Tab Notification
             if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
               try {
-                new Notification('Abholbereit!', {
-                  body: `Bestellung #${o.id} ist bereit.`,
-                });
+                new Notification('Abholbereit!', { body: `Bestellung #${o.id} ist bereit.` });
               } catch {}
             }
-            // Ton + Vibration
             trigger();
           }
           return o;
@@ -239,10 +165,9 @@ export default function Page() {
       } catch {}
     };
 
-    // Sofort + Intervall
     tick();
     const id = setInterval(tick, 4000);
-    return () => { stop = true; clearInterval(id); };
+    return () => { clearInterval(id); };
   }, [activeOrderId, trigger]);
 
   // ==========================
@@ -250,20 +175,19 @@ export default function Page() {
   // ==========================
   useEffect(() => {
     if (tab !== 'kitchen') return;
-    let stop = false;
 
     const load = async () => {
       try {
         const r = await fetch('/api/orders', { cache: 'no-store' });
         if (!r.ok) return;
         const list = (await r.json()) as Order[];
-        if (!stop) setKitchenOrders(list);
+        setKitchenOrders(list);
       } catch {}
     };
 
     load();
     const id = setInterval(load, 4000);
-    return () => { stop = true; clearInterval(id); };
+    return () => { clearInterval(id); };
   }, [tab]);
 
   // ==========================
@@ -277,7 +201,6 @@ export default function Page() {
       body: JSON.stringify({ status: ns }),
     });
     if (!r.ok) alert('Statuswechsel fehlgeschlagen');
-    // restliches Polling holt den neuen Zustand
   }, []);
 
   // ==========================
@@ -304,20 +227,16 @@ export default function Page() {
 
       {/* Tabs */}
       <div className="mt-4 flex gap-2">
-        {([
-          ['menu', 'Menü'] as const,
-          ['checkout', 'Kasse'] as const,
-          ['status', 'Status'] as const,
-          ['kitchen', 'Kitchen'] as const,
-        ]).map(([key, label]) => (
+        {tabs.map((key) => (
           <button
             key={key}
-            onClick={() => setTab(key as any)}
-            className={`rounded-full px-4 py-2 text-sm shadow ${
-              tab === key ? 'bg-emerald-600 text-white' : 'bg-white text-gray-700'
-            }`}
+            onClick={() => setTab(key)}
+            className={`rounded-full px-4 py-2 text-sm shadow ${tab === key ? 'bg-emerald-600 text-white' : 'bg-white text-gray-700'}`}
           >
-            {label}
+            {key === 'menu' && 'Menü'}
+            {key === 'checkout' && 'Kasse'}
+            {key === 'status' && 'Status'}
+            {key === 'kitchen' && 'Kitchen'}
           </button>
         ))}
       </div>
@@ -329,53 +248,26 @@ export default function Page() {
             <div key={m.id} className="rounded-2xl border p-4 shadow-sm">
               <div className="font-medium">{m.name}</div>
               <div className="text-sm text-gray-600">{formatPrice(m.price_cents)}</div>
-              <button
-                onClick={() => addToCart(m)}
-                className="mt-3 rounded-lg bg-emerald-600 px-3 py-1.5 text-white"
-              >
-                In den Warenkorb
-              </button>
+              <button onClick={() => addToCart(m)} className="mt-3 rounded-lg bg-emerald-600 px-3 py-1.5 text-white">In den Warenkorb</button>
             </div>
           ))}
 
-          {/* Warenkorb rechts/unterhalb */}
+          {/* Warenkorb */}
           <div className="col-span-1 sm:col-span-2">
             <h2 className="mt-6 text-lg font-semibold">Warenkorb</h2>
             <div className="mt-2 divide-y rounded-2xl border bg-white">
-              {cart.length === 0 && (
-                <div className="p-4 text-sm text-gray-500">Noch leer.</div>
-              )}
+              {cart.length === 0 && <div className="p-4 text-sm text-gray-500">Noch leer.</div>}
               {cart.map((l, i) => (
-                <div
-                  key={l.id ?? `${l.item?.id ?? 'item'}-${i}`}
-                  className="flex items-center justify-between gap-2 p-3"
-                >
+                <div key={l.id ?? `${l.item?.id ?? 'item'}-${i}`} className="flex items-center justify-between gap-2 p-3">
                   <div className="truncate">
                     <div className="font-medium">{l.item?.name ?? 'Position'}</div>
                     <div className="text-sm text-gray-500">{formatPrice(l.item?.price_cents || 0)}</div>
                   </div>
                   <div className="flex items-center gap-2">
-                    <button
-                      onClick={() => adjustQty(l.id, -1)}
-                      className="rounded-full border px-2 py-1"
-                      aria-label="Menge verringern"
-                    >
-                      −
-                    </button>
+                    <button onClick={() => adjustQty(l.id, -1)} className="rounded-full border px-2 py-1" aria-label="Menge verringern">−</button>
                     <div className="w-6 text-center tabular-nums">{l.qty}</div>
-                    <button
-                      onClick={() => adjustQty(l.id, +1)}
-                      className="rounded-full border px-2 py-1"
-                      aria-label="Menge erhöhen"
-                    >
-                      +
-                    </button>
-                    <button
-                      onClick={() => removeLine(l.id)}
-                      className="rounded-md border px-2 py-1 text-sm"
-                    >
-                      Entfernen
-                    </button>
+                    <button onClick={() => adjustQty(l.id, +1)} className="rounded-full border px-2 py-1" aria-label="Menge erhöhen">+</button>
+                    <button onClick={() => removeLine(l.id)} className="rounded-md border px-2 py-1 text-sm">Entfernen</button>
                   </div>
                 </div>
               ))}
@@ -385,19 +277,8 @@ export default function Page() {
               <div className="text-base font-semibold">{formatPrice(totalCents)}</div>
             </div>
             <div className="mt-4 flex flex-col gap-2 sm:flex-row">
-              <input
-                type="email"
-                value={customerEmail}
-                onChange={(e) => setCustomerEmail(e.target.value)}
-                placeholder="E‑Mail (optional, für Ready‑Mail)"
-                className="w-full rounded-lg border px-3 py-2"
-              />
-              <button
-                onClick={() => setTab('checkout')}
-                className="rounded-lg bg-sky-600 px-4 py-2 text-white"
-              >
-                Zur Kasse
-              </button>
+              <input type="email" value={customerEmail} onChange={(e) => setCustomerEmail(e.target.value)} placeholder="E‑Mail (optional, für Ready‑Mail)" className="w-full rounded-lg border px-3 py-2" />
+              <button onClick={() => setTab('checkout')} className="rounded-lg bg-sky-600 px-4 py-2 text-white">Zur Kasse</button>
             </div>
           </div>
         </div>
@@ -408,13 +289,10 @@ export default function Page() {
         <div className="mt-6">
           <h2 className="text-lg font-semibold">Kasse</h2>
           <div className="mt-2 rounded-2xl border bg-white p-4">
-            <div className="text-sm text-gray-700">
-              Bitte überprüfe deine Bestellung. Du kannst optional eine E‑Mail angeben, um beim Status
-              <span className="rounded bg-gray-100 px-1 py-0.5">ready</span> zusätzlich eine Mail zu erhalten.
-            </div>
+            <div className="text-sm text-gray-700">Bitte überprüfe deine Bestellung. Du kannst optional eine E‑Mail angeben, um beim Status <span className="rounded bg-gray-100 px-1 py-0.5">ready</span> zusätzlich eine Mail zu erhalten.</div>
             <div className="mt-3 divide-y">
               {cart.map((l, i) => (
-                <div key={l.id ?? `${l.item?.id ?? 'item'}-${i}` } className="flex justify-between py-2 text-sm">
+                <div key={l.id ?? `${l.item?.id ?? 'item'}-${i}`} className="flex justify-between py-2 text-sm">
                   <div>{l.qty}× {l.item?.name}</div>
                   <div>{formatPrice((l.item?.price_cents || 0) * l.qty)}</div>
                 </div>
@@ -425,20 +303,8 @@ export default function Page() {
               <div className="text-base font-semibold">{formatPrice(totalCents)}</div>
             </div>
             <div className="mt-4 flex flex-col gap-2 sm:flex-row">
-              <input
-                type="email"
-                value={customerEmail}
-                onChange={(e) => setCustomerEmail(e.target.value)}
-                placeholder="E‑Mail (optional)"
-                className="w-full rounded-lg border px-3 py-2"
-              />
-              <button
-                onClick={createOrder}
-                disabled={cart.length === 0}
-                className="rounded-lg bg-emerald-600 px-4 py-2 text-white disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                Bestellung abschicken
-              </button>
+              <input type="email" value={customerEmail} onChange={(e) => setCustomerEmail(e.target.value)} placeholder="E‑Mail (optional)" className="w-full rounded-lg border px-3 py-2" />
+              <button onClick={createOrder} disabled={cart.length === 0} className="rounded-lg bg-emerald-600 px-4 py-2 text-white disabled:cursor-not-allowed disabled:opacity-50">Bestellung abschicken</button>
             </div>
           </div>
         </div>
@@ -450,10 +316,7 @@ export default function Page() {
           <h2 className="text-lg font-semibold">Bestell‑Status</h2>
           {!activeOrderId && (
             <div className="mt-2 rounded-2xl border bg-white p-4">
-              <div className="text-sm text-gray-600">
-                Noch keine aktive Bestellung gefunden. Du kannst eine Order‑ID eingeben, um den Status zu
-                verfolgen.
-              </div>
+              <div className="text-sm text-gray-600">Noch keine aktive Bestellung gefunden. Du kannst eine Order‑ID eingeben, um den Status zu verfolgen.</div>
               <ManualOrderId onPick={(id) => { setActiveOrderId(id); try { localStorage.setItem('activeOrderId', id); } catch {} }} />
             </div>
           )}
@@ -462,31 +325,16 @@ export default function Page() {
               <div className="text-sm text-gray-600">Order‑ID: <span className="font-mono">{activeOrderId}</span></div>
               <div className="mt-2 text-base">Status: <StatusBadge s={activeOrder?.status} /></div>
               {activeOrder?.status === 'ready' && (
-                <div className="mt-3 rounded-lg bg-emerald-50 p-3 text-emerald-800">
-                  Abholbereit! Bitte zur Theke kommen und die Bestellnummer nennen.
-                </div>
+                <div className="mt-3 rounded-lg bg-emerald-50 p-3 text-emerald-800">Abholbereit! Bitte zur Theke kommen und die Bestellnummer nennen.</div>
               )}
               <div className="mt-4 flex flex-wrap gap-2">
                 {!notifGranted && (
-                  <button onClick={askNotif} className="rounded-lg border px-3 py-1.5 text-sm">
-                    Push‑Popup erlauben
-                  </button>
+                  <button onClick={askNotif} className="rounded-lg border px-3 py-1.5 text-sm">Push‑Popup erlauben</button>
                 )}
                 {!soundEnabled && (
-                  <button onClick={enableSound} className="rounded-lg border px-3 py-1.5 text-sm">
-                    🔔 Ton aktivieren
-                  </button>
+                  <button onClick={enableSound} className="rounded-lg border px-3 py-1.5 text-sm">🔔 Ton aktivieren</button>
                 )}
-                <button
-                  onClick={() => {
-                    setActiveOrderId(null);
-                    try { localStorage.removeItem('activeOrderId'); } catch {}
-                    setActiveOrder(null);
-                  }}
-                  className="rounded-lg border px-3 py-1.5 text-sm"
-                >
-                  Andere Bestellung verfolgen
-                </button>
+                <button onClick={() => { setActiveOrderId(null); try { localStorage.removeItem('activeOrderId'); } catch {} setActiveOrder(null); }} className="rounded-lg border px-3 py-1.5 text-sm">Andere Bestellung verfolgen</button>
               </div>
             </div>
           )}
@@ -498,9 +346,7 @@ export default function Page() {
         <div className="mt-6">
           <h2 className="text-lg font-semibold">Kitchen‑Dashboard</h2>
           <div className="mt-3 grid grid-cols-1 gap-3">
-            {kitchenOrders.length === 0 && (
-              <div className="rounded-2xl border bg-white p-4 text-sm text-gray-500">Keine Bestellungen.</div>
-            )}
+            {kitchenOrders.length === 0 && <div className="rounded-2xl border bg-white p-4 text-sm text-gray-500">Keine Bestellungen.</div>}
             {kitchenOrders.map((o) => (
               <div key={o.id} className="rounded-2xl border bg-white p-4">
                 <div className="flex items-center justify-between">
@@ -521,12 +367,7 @@ export default function Page() {
                 </div>
                 <div className="mt-3 flex gap-2">
                   {o.status !== 'picked_up' && (
-                    <button
-                      onClick={() => bumpStatus(o)}
-                      className="rounded-lg bg-emerald-600 px-3 py-1.5 text-white"
-                    >
-                      Nächster Status → {nextStatus(o.status)}
-                    </button>
+                    <button onClick={() => bumpStatus(o)} className="rounded-lg bg-emerald-600 px-3 py-1.5 text-white">Nächster Status → {nextStatus(o.status)}</button>
                   )}
                 </div>
               </div>
@@ -535,15 +376,8 @@ export default function Page() {
         </div>
       )}
 
-      {/* Floating Ton‑Button (als zusätzliche Option) */}
       {!soundEnabled && (
-        <button
-          onClick={enableSound}
-          className="fixed bottom-4 right-4 hidden rounded-full bg-emerald-600 px-4 py-2 text-white shadow-lg sm:block"
-          aria-label="Benachrichtigungs‑Ton aktivieren"
-        >
-          🔔 Ton aktivieren
-        </button>
+        <button onClick={enableSound} className="fixed bottom-4 right-4 hidden rounded-full bg-emerald-600 px-4 py-2 text-white shadow-lg sm:block" aria-label="Benachrichtigungs‑Ton aktivieren">🔔 Ton aktivieren</button>
       )}
     </div>
   );
@@ -553,37 +387,16 @@ export default function Page() {
 // Kleinere UI‑Bausteine
 // ==========================
 function StatusBadge({ s }: { s?: OrderStatus | null }) {
-  const cls =
-    s === 'ready'
-      ? 'bg-emerald-100 text-emerald-700'
-      : s === 'preparing'
-      ? 'bg-amber-100 text-amber-700'
-      : s === 'picked_up'
-      ? 'bg-gray-100 text-gray-700'
-      : 'bg-sky-100 text-sky-700';
-  return (
-    <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs ${cls}`}>
-      {s ?? '—'}
-    </span>
-  );
+  const cls = s === 'ready' ? 'bg-emerald-100 text-emerald-700' : s === 'preparing' ? 'bg-amber-100 text-amber-700' : s === 'picked_up' ? 'bg-gray-100 text-gray-700' : 'bg-sky-100 text-sky-700';
+  return <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs ${cls}`}>{s ?? '—'}</span>;
 }
 
 function ManualOrderId({ onPick }: { onPick: (id: string) => void }) {
   const [v, setV] = useState('');
   return (
     <div className="mt-3 flex gap-2">
-      <input
-        value={v}
-        onChange={(e) => setV(e.target.value)}
-        placeholder="Order‑ID eingeben"
-        className="flex-1 rounded-lg border px-3 py-2"
-      />
-      <button
-        onClick={() => v && onPick(v.trim())}
-        className="rounded-lg bg-sky-600 px-3 py-2 text-white"
-      >
-        Laden
-      </button>
+      <input value={v} onChange={(e) => setV(e.target.value)} placeholder="Order‑ID eingeben" className="flex-1 rounded-lg border px-3 py-2" />
+      <button onClick={() => v && onPick(v.trim())} className="rounded-lg bg-sky-600 px-3 py-2 text-white">Laden</button>
     </div>
   );
 }
