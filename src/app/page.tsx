@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useReadyFeedback } from '@/hooks/useReadyFeedback';
+import { useReadyFeedback } from '@/src/hooks/useReadyFeedback';
 
 // ==========================
 // Typen
@@ -42,7 +42,7 @@ const nextStatus = (s: OrderStatus): OrderStatus =>
 const nid = () => Math.random().toString(36).slice(2, 10);
 
 // ==========================
-// Demo‑Menü (Client‑seitig)
+// Demo-Menü (Client-seitig)
 // ==========================
 const MENU: MenuItem[] = [
   { id: 'doener', name: 'Döner Kebab', price_cents: 850 },
@@ -70,7 +70,7 @@ export default function Page() {
   const alreadyNotifiedRef = useRef(false);
   const { soundEnabled, enableSound, trigger } = useReadyFeedback();
 
-  // Lokal gespeicherte Order‑ID wiederherstellen
+  // Lokal gespeicherte Order-ID wiederherstellen
   useEffect(() => {
     try {
       const saved = localStorage.getItem('activeOrderId');
@@ -85,7 +85,7 @@ export default function Page() {
   );
 
   // ==========================
-  // Warenkorb‑Aktionen
+  // Warenkorb-Aktionen
   // ==========================
   const addToCart = useCallback((m: MenuItem) => {
     setCart((prev) => {
@@ -104,9 +104,10 @@ export default function Page() {
   }, []);
 
   const adjustQty = useCallback((id: string, delta: number) => {
-    setCart((prev) => prev
-      .map((l) => (l.id === id ? { ...l, qty: Math.max(0, l.qty + delta) } : l))
-      .filter((l) => l.qty > 0),
+    setCart((prev) =>
+      prev
+        .map((l) => (l.id === id ? { ...l, qty: Math.max(0, l.qty + delta) } : l))
+        .filter((l) => l.qty > 0),
     );
   }, []);
 
@@ -139,7 +140,7 @@ export default function Page() {
   }, [cart, totalCents, customerEmail]);
 
   // ==========================
-  // Status‑Polling (alle 4s)
+  // Status-Polling (alle 4s)
   // ==========================
   useEffect(() => {
     if (!activeOrderId) return;
@@ -171,7 +172,7 @@ export default function Page() {
   }, [activeOrderId, trigger]);
 
   // ==========================
-  // Kitchen‑Polling (alle 4s)
+  // Kitchen-Polling (alle 4s)
   // ==========================
   useEffect(() => {
     if (tab !== 'kitchen') return;
@@ -191,20 +192,42 @@ export default function Page() {
   }, [tab]);
 
   // ==========================
-  // Kitchen: Status wechseln
+  // Kitchen: Status wechseln (optimistisches Update)
   // ==========================
   const bumpStatus = useCallback(async (o: Order) => {
     const ns = nextStatus(o.status);
-    const r = await fetch(`/api/orders/${o.id}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ status: ns }),
-    });
-    if (!r.ok) alert('Statuswechsel fehlgeschlagen');
+
+    // 1) Optimistisch sofort anzeigen
+    setKitchenOrders((prev) => prev.map((k) => (k.id === o.id ? { ...k, status: ns } : k)));
+
+    try {
+      const r = await fetch(`/api/orders/${o.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: ns }),
+        cache: 'no-store',
+      });
+
+      if (!r.ok) {
+        // Rollback
+        setKitchenOrders((prev) => prev.map((k) => (k.id === o.id ? { ...k, status: o.status } : k)));
+        const msg = await r.text().catch(() => '');
+        alert(`Statuswechsel fehlgeschlagen: ${msg || r.status}`);
+        return;
+      }
+
+      // Mit Server-Wahrheit abgleichen
+      const updated = (await r.json()) as Order;
+      setKitchenOrders((prev) => prev.map((k) => (k.id === o.id ? { ...k, status: updated.status } : k)));
+    } catch {
+      // Rollback bei Netzwerkfehler
+      setKitchenOrders((prev) => prev.map((k) => (k.id === o.id ? { ...k, status: o.status } : k)));
+      alert('Statuswechsel fehlgeschlagen (Netzwerkfehler).');
+    }
   }, []);
 
   // ==========================
-  // Notifications‑Erlaubnis (Button)
+  // Notifications-Erlaubnis (Button)
   // ==========================
   const [notifGranted, setNotifGranted] = useState(
     typeof Notification !== 'undefined' ? Notification.permission === 'granted' : false,
@@ -223,7 +246,7 @@ export default function Page() {
   // ==========================
   return (
     <div className="mx-auto max-w-3xl p-4">
-      <h1 className="text-2xl font-semibold">Döner Self‑Ordering</h1>
+      <h1 className="text-2xl font-semibold">Döner Self-Ordering</h1>
 
       {/* Tabs */}
       <div className="mt-4 flex gap-2">
@@ -244,7 +267,7 @@ export default function Page() {
       {/* Menü */}
       {tab === 'menu' && (
         <div className="mt-6 grid grid-cols-1 gap-3 sm:grid-cols-2">
-          {MENU.map((m, i) => (
+          {MENU.map((m) => (
             <div key={m.id} className="rounded-2xl border p-4 shadow-sm">
               <div className="font-medium">{m.name}</div>
               <div className="text-sm text-gray-600">{formatPrice(m.price_cents)}</div>
@@ -257,8 +280,8 @@ export default function Page() {
             <h2 className="mt-6 text-lg font-semibold">Warenkorb</h2>
             <div className="mt-2 divide-y rounded-2xl border bg-white">
               {cart.length === 0 && <div className="p-4 text-sm text-gray-500">Noch leer.</div>}
-              {cart.map((l, i) => (
-                <div key={l.id ?? `${l.item?.id ?? 'item'}-${i}`} className="flex items-center justify-between gap-2 p-3">
+              {cart.map((l, _i) => (
+                <div key={l.id ?? `${l.item?.id ?? 'item'}-${_i}`} className="flex items-center justify-between gap-2 p-3">
                   <div className="truncate">
                     <div className="font-medium">{l.item?.name ?? 'Position'}</div>
                     <div className="text-sm text-gray-500">{formatPrice(l.item?.price_cents || 0)}</div>
@@ -277,7 +300,7 @@ export default function Page() {
               <div className="text-base font-semibold">{formatPrice(totalCents)}</div>
             </div>
             <div className="mt-4 flex flex-col gap-2 sm:flex-row">
-              <input type="email" value={customerEmail} onChange={(e) => setCustomerEmail(e.target.value)} placeholder="E‑Mail (optional, für Ready‑Mail)" className="w-full rounded-lg border px-3 py-2" />
+              <input type="email" value={customerEmail} onChange={(e) => setCustomerEmail(e.target.value)} placeholder="E-Mail (optional, für Ready-Mail)" className="w-full rounded-lg border px-3 py-2" />
               <button onClick={() => setTab('checkout')} className="rounded-lg bg-sky-600 px-4 py-2 text-white">Zur Kasse</button>
             </div>
           </div>
@@ -289,10 +312,10 @@ export default function Page() {
         <div className="mt-6">
           <h2 className="text-lg font-semibold">Kasse</h2>
           <div className="mt-2 rounded-2xl border bg-white p-4">
-            <div className="text-sm text-gray-700">Bitte überprüfe deine Bestellung. Du kannst optional eine E‑Mail angeben, um beim Status <span className="rounded bg-gray-100 px-1 py-0.5">ready</span> zusätzlich eine Mail zu erhalten.</div>
+            <div className="text-sm text-gray-700">Bitte überprüfe deine Bestellung. Du kannst optional eine E-Mail angeben, um beim Status <span className="rounded bg-gray-100 px-1 py-0.5">ready</span> zusätzlich eine Mail zu erhalten.</div>
             <div className="mt-3 divide-y">
-              {cart.map((l, i) => (
-                <div key={l.id ?? `${l.item?.id ?? 'item'}-${i}`} className="flex justify-between py-2 text-sm">
+              {cart.map((l, _i) => (
+                <div key={l.id ?? `${l.item?.id ?? 'item'}-${_i}`} className="flex justify-between py-2 text-sm">
                   <div>{l.qty}× {l.item?.name}</div>
                   <div>{formatPrice((l.item?.price_cents || 0) * l.qty)}</div>
                 </div>
@@ -303,7 +326,7 @@ export default function Page() {
               <div className="text-base font-semibold">{formatPrice(totalCents)}</div>
             </div>
             <div className="mt-4 flex flex-col gap-2 sm:flex-row">
-              <input type="email" value={customerEmail} onChange={(e) => setCustomerEmail(e.target.value)} placeholder="E‑Mail (optional)" className="w-full rounded-lg border px-3 py-2" />
+              <input type="email" value={customerEmail} onChange={(e) => setCustomerEmail(e.target.value)} placeholder="E-Mail (optional)" className="w-full rounded-lg border px-3 py-2" />
               <button onClick={createOrder} disabled={cart.length === 0} className="rounded-lg bg-emerald-600 px-4 py-2 text-white disabled:cursor-not-allowed disabled:opacity-50">Bestellung abschicken</button>
             </div>
           </div>
@@ -313,23 +336,23 @@ export default function Page() {
       {/* Status */}
       {tab === 'status' && (
         <div className="mt-6">
-          <h2 className="text-lg font-semibold">Bestell‑Status</h2>
+          <h2 className="text-lg font-semibold">Bestell-Status</h2>
           {!activeOrderId && (
             <div className="mt-2 rounded-2xl border bg-white p-4">
-              <div className="text-sm text-gray-600">Noch keine aktive Bestellung gefunden. Du kannst eine Order‑ID eingeben, um den Status zu verfolgen.</div>
+              <div className="text-sm text-gray-600">Noch keine aktive Bestellung gefunden. Du kannst eine Order-ID eingeben, um den Status zu verfolgen.</div>
               <ManualOrderId onPick={(id) => { setActiveOrderId(id); try { localStorage.setItem('activeOrderId', id); } catch {} }} />
             </div>
           )}
           {activeOrderId && (
             <div className="mt-3 rounded-2xl border bg-white p-4">
-              <div className="text-sm text-gray-600">Order‑ID: <span className="font-mono">{activeOrderId}</span></div>
+              <div className="text-sm text-gray-600">Order-ID: <span className="font-mono">{activeOrderId}</span></div>
               <div className="mt-2 text-base">Status: <StatusBadge s={activeOrder?.status} /></div>
               {activeOrder?.status === 'ready' && (
                 <div className="mt-3 rounded-lg bg-emerald-50 p-3 text-emerald-800">Abholbereit! Bitte zur Theke kommen und die Bestellnummer nennen.</div>
               )}
               <div className="mt-4 flex flex-wrap gap-2">
                 {!notifGranted && (
-                  <button onClick={askNotif} className="rounded-lg border px-3 py-1.5 text-sm">Push‑Popup erlauben</button>
+                  <button onClick={askNotif} className="rounded-lg border px-3 py-1.5 text-sm">Push-Popup erlauben</button>
                 )}
                 {!soundEnabled && (
                   <button onClick={enableSound} className="rounded-lg border px-3 py-1.5 text-sm">🔔 Ton aktivieren</button>
@@ -344,7 +367,7 @@ export default function Page() {
       {/* Kitchen */}
       {tab === 'kitchen' && (
         <div className="mt-6">
-          <h2 className="text-lg font-semibold">Kitchen‑Dashboard</h2>
+          <h2 className="text-lg font-semibold">Kitchen-Dashboard</h2>
           <div className="mt-3 grid grid-cols-1 gap-3">
             {kitchenOrders.length === 0 && <div className="rounded-2xl border bg-white p-4 text-sm text-gray-500">Keine Bestellungen.</div>}
             {kitchenOrders.map((o) => (
@@ -354,8 +377,8 @@ export default function Page() {
                   <StatusBadge s={o.status} />
                 </div>
                 <div className="mt-2 divide-y">
-                  {o.lines.map((l, i) => (
-                    <div key={l.id ?? `${l.item?.id ?? 'item'}-${i}`} className="flex items-center justify-between py-2 text-sm">
+                  {o.lines.map((l, _i) => (
+                    <div key={l.id ?? `${l.item?.id ?? 'item'}-${_i}`} className="flex items-center justify-between py-2 text-sm">
                       <div>{l.qty}× {l.item?.name || 'Position'}</div>
                       <div className="text-gray-500">{formatPrice((l.item?.price_cents || 0) * l.qty)}</div>
                     </div>
@@ -377,14 +400,14 @@ export default function Page() {
       )}
 
       {!soundEnabled && (
-        <button onClick={enableSound} className="fixed bottom-4 right-4 hidden rounded-full bg-emerald-600 px-4 py-2 text-white shadow-lg sm:block" aria-label="Benachrichtigungs‑Ton aktivieren">🔔 Ton aktivieren</button>
+        <button onClick={enableSound} className="fixed bottom-4 right-4 hidden rounded-full bg-emerald-600 px-4 py-2 text-white shadow-lg sm:block" aria-label="Benachrichtigungs-Ton aktivieren">🔔 Ton aktivieren</button>
       )}
     </div>
   );
 }
 
 // ==========================
-// Kleinere UI‑Bausteine
+// Kleinere UI-Bausteine
 // ==========================
 function StatusBadge({ s }: { s?: OrderStatus | null }) {
   const cls = s === 'ready' ? 'bg-emerald-100 text-emerald-700' : s === 'preparing' ? 'bg-amber-100 text-amber-700' : s === 'picked_up' ? 'bg-gray-100 text-gray-700' : 'bg-sky-100 text-sky-700';
@@ -395,7 +418,7 @@ function ManualOrderId({ onPick }: { onPick: (id: string) => void }) {
   const [v, setV] = useState('');
   return (
     <div className="mt-3 flex gap-2">
-      <input value={v} onChange={(e) => setV(e.target.value)} placeholder="Order‑ID eingeben" className="flex-1 rounded-lg border px-3 py-2" />
+      <input value={v} onChange={(e) => setV(e.target.value)} placeholder="Order-ID eingeben" className="flex-1 rounded-lg border px-3 py-2" />
       <button onClick={() => v && onPick(v.trim())} className="rounded-lg bg-sky-600 px-3 py-2 text-white">Laden</button>
     </div>
   );
