@@ -66,6 +66,8 @@ export default function Page() {
   const [activeOrder, setActiveOrder] = useState<Order | null>(null);
 
   const [kitchenOrders, setKitchenOrders] = useState<Order[]>([]);
+  const [kitchenMutating, setKitchenMutating] = useState(false);
+  const [pendingIds, setPendingIds] = useState<Record<string, boolean>>({});
 
   const alreadyNotifiedRef = useRef(false);
   const { soundEnabled, enableSound, trigger } = useReadyFeedback();
@@ -175,7 +177,7 @@ export default function Page() {
   // Kitchen-Polling (alle 4s)
   // ==========================
   useEffect(() => {
-    if (tab !== 'kitchen') return;
+    if (tab !== 'kitchen' || kitchenMutating) return;
 
     const load = async () => {
       try {
@@ -189,15 +191,21 @@ export default function Page() {
     load();
     const id = setInterval(load, 4000);
     return () => { clearInterval(id); };
-  }, [tab]);
+  }, [tab, kitchenMutating]);
 
   // ==========================
-  // Kitchen: Status wechseln (optimistisches Update)
+  // Kitchen: Status wechseln (optimistisch + Mutation-Lock)
   // ==========================
   const bumpStatus = useCallback(async (o: Order) => {
+    if (pendingIds[o.id]) return; // Doppelklick/Parallelklick verhindern
+
     const ns = nextStatus(o.status);
 
-    // 1) Optimistisch sofort anzeigen
+    // Locks setzen
+    setPendingIds((p) => ({ ...p, [o.id]: true }));
+    setKitchenMutating(true);
+
+    // 1) Optimistisches Update
     setKitchenOrders((prev) => prev.map((k) => (k.id === o.id ? { ...k, status: ns } : k)));
 
     try {
@@ -216,15 +224,20 @@ export default function Page() {
         return;
       }
 
-      // Mit Server-Wahrheit abgleichen
-      const updated = (await r.json()) as Order;
-      setKitchenOrders((prev) => prev.map((k) => (k.id === o.id ? { ...k, status: updated.status } : k)));
+      // 2) Frische Liste holen, um Polling-Race zu vermeiden
+      const fresh = (await fetch('/api/orders', { cache: 'no-store' }).then((x) => x.json())) as Order[];
+      setKitchenOrders(fresh);
     } catch {
-      // Rollback bei Netzwerkfehler
       setKitchenOrders((prev) => prev.map((k) => (k.id === o.id ? { ...k, status: o.status } : k)));
       alert('Statuswechsel fehlgeschlagen (Netzwerkfehler).');
+    } finally {
+      setPendingIds((p) => {
+        const { [o.id]: _omit, ...rest } = p;
+        return rest;
+      });
+      setKitchenMutating(false);
     }
-  }, []);
+  }, [pendingIds]);
 
   // ==========================
   // Notifications-Erlaubnis (Button)
@@ -390,7 +403,7 @@ export default function Page() {
                 </div>
                 <div className="mt-3 flex gap-2">
                   {o.status !== 'picked_up' && (
-                    <button onClick={() => bumpStatus(o)} className="rounded-lg bg-emerald-600 px-3 py-1.5 text-white">Nächster Status → {nextStatus(o.status)}</button>
+                    <button onClick={() => bumpStatus(o)} disabled={!!pendingIds[o.id]} className={`rounded-lg px-3 py-1.5 text-white ${pendingIds[o.id] ? 'bg-emerald-400 cursor-wait' : 'bg-emerald-600'}`}>Nächster Status → {nextStatus(o.status)}</button>
                   )}
                 </div>
               </div>
