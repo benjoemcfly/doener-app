@@ -142,6 +142,12 @@ export default function Page() {
   }, [cart, totalCents, customerEmail]);
 
   // ==========================
+  // Wenn neue Order-ID verfolgt wird, Notification-Flag zurücksetzen
+  useEffect(() => {
+    alreadyNotifiedRef.current = false;
+  }, [activeOrderId]);
+
+  // ==========================
   // Status-Polling (alle 4s)
   // ==========================
   useEffect(() => {
@@ -194,19 +200,14 @@ export default function Page() {
   }, [tab, kitchenMutating]);
 
   // ==========================
-  // Kitchen: Status wechseln (optimistisch + Mutation-Lock)
+  // Kitchen: Status wechseln (server-truth, kein Optimismus)
   // ==========================
   const bumpStatus = useCallback(async (o: Order) => {
     if (pendingIds[o.id]) return; // Doppelklick/Parallelklick verhindern
 
     const ns = nextStatus(o.status);
-
-    // Locks setzen
     setPendingIds((p) => ({ ...p, [o.id]: true }));
     setKitchenMutating(true);
-
-    // 1) Optimistisches Update
-    setKitchenOrders((prev) => prev.map((k) => (k.id === o.id ? { ...k, status: ns } : k)));
 
     try {
       const r = await fetch(`/api/orders/${o.id}`, {
@@ -217,18 +218,15 @@ export default function Page() {
       });
 
       if (!r.ok) {
-        // Rollback
-        setKitchenOrders((prev) => prev.map((k) => (k.id === o.id ? { ...k, status: o.status } : k)));
         const msg = await r.text().catch(() => '');
         alert(`Statuswechsel fehlgeschlagen: ${msg || r.status}`);
         return;
       }
 
-      // 2) Frische Liste holen, um Polling-Race zu vermeiden
-      const fresh = (await fetch('/api/orders', { cache: 'no-store' }).then((x) => x.json())) as Order[];
+      // Nach Erfolg NUR vom Server laden (Cache-Buster gegen CDN)
+      const fresh = (await fetch(`/api/orders?t=${Date.now()}`, { cache: 'no-store' }).then((x) => x.json())) as Order[];
       setKitchenOrders(fresh);
     } catch {
-      setKitchenOrders((prev) => prev.map((k) => (k.id === o.id ? { ...k, status: o.status } : k)));
       alert('Statuswechsel fehlgeschlagen (Netzwerkfehler).');
     } finally {
       setPendingIds((p) => {
@@ -357,7 +355,7 @@ export default function Page() {
             </div>
           )}
           {activeOrderId && (
-            <div className="mt-3 rounded-2xl border bg-white p-4">
+            <div className="mt-3 rounded-2xl border bg-white p-4" onClick={() => { if (!soundEnabled) enableSound(); }}>
               <div className="text-sm text-gray-600">Order-ID: <span className="font-mono">{activeOrderId}</span></div>
               <div className="mt-2 text-base">Status: <StatusBadge s={activeOrder?.status} /></div>
               {activeOrder?.status === 'ready' && (
@@ -413,7 +411,7 @@ export default function Page() {
       )}
 
       {!soundEnabled && (
-        <button onClick={enableSound} className="fixed bottom-4 right-4 hidden rounded-full bg-emerald-600 px-4 py-2 text-white shadow-lg sm:block" aria-label="Benachrichtigungs-Ton aktivieren">🔔 Ton aktivieren</button>
+        <button onClick={enableSound} className="fixed bottom-4 right-4 rounded-full bg-emerald-600 px-4 py-2 text-white shadow-lg" aria-label="Benachrichtigungs-Ton aktivieren">🔔 Ton aktivieren</button>
       )}
     </div>
   );
