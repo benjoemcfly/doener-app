@@ -52,9 +52,9 @@ export async function POST(req: NextRequest) {
     const status: OrderStatus = 'in_queue';
 
     await sql`
-      INSERT INTO public.orders (id, lines, total_cents, status)
-      VALUES (${id}, ${sql.json(body.lines)}, ${body.total_cents}, ${status})
-    `;
+  INSERT INTO public.orders (id, lines, total_cents, status)
+  VALUES (${id}, ${JSON.stringify(body.lines)}::jsonb, ${body.total_cents}, ${status})
+`;
 
     if (body.customer_email) {
       try {
