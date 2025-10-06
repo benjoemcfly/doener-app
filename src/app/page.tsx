@@ -139,10 +139,12 @@ export default function Page() {
     } catch {}
     setCart([]);
     setTab('status');
-  }, [cart, totalCents, customerEmail]);
+    enableSound(); // Nutzer-Geste: Audio primen direkt nach Bestellklick
+  }, [cart, totalCents, customerEmail, enableSound]);
 
   // ==========================
   // Wenn neue Order-ID verfolgt wird, Notification-Flag zurücksetzen
+  // ==========================
   useEffect(() => {
     alreadyNotifiedRef.current = false;
   }, [activeOrderId]);
@@ -351,7 +353,11 @@ export default function Page() {
           {!activeOrderId && (
             <div className="mt-2 rounded-2xl border bg-white p-4">
               <div className="text-sm text-gray-600">Noch keine aktive Bestellung gefunden. Du kannst eine Order-ID eingeben, um den Status zu verfolgen.</div>
-              <ManualOrderId onPick={(id) => { setActiveOrderId(id); try { localStorage.setItem('activeOrderId', id); } catch {} }} />
+              <ManualOrderId onPick={(id) => {
+                setActiveOrderId(id);
+                try { localStorage.setItem('activeOrderId', id); } catch {}
+                enableSound(); // Nutzer-Geste: Audio primen beim Laden
+              }} />
             </div>
           )}
           {activeOrderId && (
