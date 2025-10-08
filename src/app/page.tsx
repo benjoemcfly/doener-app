@@ -279,6 +279,7 @@ export default function Page() {
   // ==========================
   const setOrderStatus = useCallback(async (id: string, status: OrderStatus) => {
     setPendingIds((p) => ({ ...p, [id]: true }));
+    setKitchenMutating(true);
     try {
       const r = await fetch(`/api/orders/${id}`, {
         method: 'PATCH',
@@ -287,9 +288,11 @@ export default function Page() {
         cache: 'no-store',
       });
       if (!r.ok) throw new Error('patch failed');
-      setKitchenOrders((list) => list.map((o) => (o.id === id ? { ...(o as Order), ...(r as any) } : o)));
+      const updated = (await r.json()) as Order;
+      setKitchenOrders((list) => list.map((o) => (o.id === id ? updated : o)));
     } catch {}
     setPendingIds((p) => ({ ...p, [id]: false }));
+    setKitchenMutating(false);
   }, []);
 
   // ==========================
