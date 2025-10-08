@@ -72,6 +72,15 @@ export default function Page() {
   const alreadyNotifiedRef = useRef(false);
   const { soundEnabled, enableSound, trigger } = useReadyFeedback();
 
+  // ==========================
+  // Service Worker für Vibrations-Notification registrieren (einmalig)
+  // ==========================
+  useEffect(() => {
+    if (typeof window !== 'undefined' && 'serviceWorker' in navigator) {
+      navigator.serviceWorker.register('/sw.js').catch(() => {});
+    }
+  }, []);
+
   // Lokal gespeicherte Order-ID wiederherstellen
   useEffect(() => {
     try {
@@ -164,12 +173,22 @@ export default function Page() {
           const prevStatus = prev?.status;
           if (prevStatus !== 'ready' && o.status === 'ready' && !alreadyNotifiedRef.current) {
             alreadyNotifiedRef.current = true;
+            // Browser-Notification (falls erlaubt)
             if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
-              try {
-                new Notification('Abholbereit!', { body: `Bestellung #${o.id} ist bereit.` });
-              } catch {}
+              try { new Notification('Abholbereit!', { body: `Bestellung #${o.id} ist bereit.` }); } catch {}
             }
+            // In-Tab Ton & (leichte) Vibration
             trigger();
+            // **Zusätzlich**: Vibrations-Notification via Service Worker
+            try {
+              if (navigator.serviceWorker?.controller) {
+                navigator.serviceWorker.controller.postMessage({
+                  type: 'VIBRATE',
+                  pattern: [400, 80, 400, 120, 600],
+                  body: `Bestellung #${o.id} ist bereit.`,
+                });
+              }
+            } catch {}
           }
           return o;
         });
