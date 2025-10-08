@@ -13,80 +13,96 @@ export function useReadyFeedback() {
   const audioCtxRef = useRef<AudioContext | null>(null);
   const [soundEnabled, setSoundEnabled] = useState(false);
 
+  // Optionaler Dateisound (wenn /ready.mp3 fehlt, fällt alles auf Beep zurück)
   useEffect(() => {
-    const a = new Audio('/ready.mp3'); // optional; Fallback-Beep ist integriert
-    a.preload = 'auto';
-    audioRef.current = a;
+    try {
+      const a = new Audio('/ready.mp3');
+      a.preload = 'auto';
+      audioRef.current = a;
+    } catch {
+      audioRef.current = null;
+    }
   }, []);
 
+  // Einmalig durch User-Geste aufrufen (Klick/Tap). Startet/ent-sperrt den AudioContext.
   const enableSound = useCallback(async () => {
-    try {
-      const Ctx = typeof window !== 'undefined'
-        ? (window.AudioContext ?? window.webkitAudioContext)
-        : undefined;
+    const Ctx = typeof window !== 'undefined' ? (window.AudioContext ?? window.webkitAudioContext) : undefined;
+    if (!Ctx) {
+      setSoundEnabled(true);
+      return;
+    }
 
-      if (Ctx && !audioCtxRef.current) {
-        audioCtxRef.current = new Ctx();
-        await audioCtxRef.current.resume();
-      }
+    try {
+      if (!audioCtxRef.current) audioCtxRef.current = new Ctx();
+      await audioCtxRef.current.resume();
+
+      // Versuche kurz die Datei zu spielen (sofern vorhanden), stoppe sofort wieder
       if (audioRef.current) {
-        await audioRef.current.play();
-        audioRef.current.pause();
-        audioRef.current.currentTime = 0;
+        try {
+          await audioRef.current.play();
+          audioRef.current.pause();
+          audioRef.current.currentTime = 0;
+        } catch {
+          // Ignorieren – Fallback übernimmt später
+        }
       }
       setSoundEnabled(true);
     } catch {
+      // Letzter Ausweg: trotzdem als enabled markieren – Beep wird's später versuchen
       setSoundEnabled(true);
     }
   }, []);
 
-  // Fallback-Beep per WebAudio
-  const beep = useCallback(() => {
+  // Fallback-Beep per WebAudio (funktioniert auch ohne /ready.mp3)
+  const beep = useCallback(async () => {
     try {
-      const Ctx = typeof window !== 'undefined'
-        ? (window.AudioContext ?? window.webkitAudioContext)
-        : undefined;
+      const Ctx = typeof window !== 'undefined' ? (window.AudioContext ?? window.webkitAudioContext) : undefined;
       if (!Ctx) return;
 
       const ctx = audioCtxRef.current ?? new Ctx();
       audioCtxRef.current = ctx;
+      // Sicherstellen, dass der Context läuft
+      try { await ctx.resume(); } catch {}
 
       const osc = ctx.createOscillator();
       const gain = ctx.createGain();
       osc.type = 'sine';
       osc.frequency.value = 880; // A5
-      gain.gain.value = 0.001;
-      osc.connect(gain).connect(ctx.destination);
 
+      // Hüllkurve – ausreichend laut aber kurz
       const now = ctx.currentTime;
-      gain.gain.exponentialRampToValueAtTime(0.06, now + 0.02);
+      gain.gain.setValueAtTime(0.0001, now);
+      gain.gain.exponentialRampToValueAtTime(0.08, now + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.45);
+
+      osc.connect(gain).connect(ctx.destination);
       osc.start(now);
-      gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.4);
-      osc.stop(now + 0.42);
+      osc.stop(now + 0.46);
     } catch {
-      // ignore
+      // ignore – manche Browser ohne Audio
     }
   }, []);
 
+  // Löst Sound + Vibration aus. Nutzt Datei, fällt zuverlässig auf Beep zurück.
   const trigger = useCallback(() => {
-    let played = false;
-    if (audioRef.current) {
+    const tryFile = () => {
+      if (!audioRef.current) return false;
       try {
         audioRef.current.currentTime = 0;
         const p = audioRef.current.play();
-        if (p) p.catch(() => {});
-        played = true;
+        if (p && typeof (p as Promise<void>).then === 'function') {
+          (p as Promise<void>).catch(() => { void beep(); });
+        }
+        return true; // Versuch wurde unternommen – Beep wird ggf. im Catch ausgelöst
       } catch {
-        /* ignore */
+        return false;
       }
-    }
-    if (!played) beep();
+    };
 
-    try {
-      navigator.vibrate?.([220, 80, 260]);
-    } catch {
-      /* ignore */
-    }
+    const attempted = tryFile();
+    if (!attempted) void beep();
+
+    try { navigator.vibrate?.([220, 80, 260]); } catch {}
   }, [beep]);
 
   return { soundEnabled, enableSound, trigger };
