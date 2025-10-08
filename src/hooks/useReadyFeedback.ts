@@ -13,7 +13,7 @@ export function useReadyFeedback() {
   const audioCtxRef = useRef<AudioContext | null>(null);
   const [soundEnabled, setSoundEnabled] = useState(false);
 
-  // Optionaler Dateisound (wenn /ready.mp3 fehlt, fällt alles auf Beep zurück)
+  // Optionaler Dateisound (/ready.mp3). Fallback ist WebAudio-Chime.
   useEffect(() => {
     try {
       const a = new Audio('/ready.mp3');
@@ -24,9 +24,12 @@ export function useReadyFeedback() {
     }
   }, []);
 
-  // Einmalig durch User-Geste aufrufen (Klick/Tap). Startet/ent-sperrt den AudioContext.
+  // Einmal per Nutzer-Geste aufrufen (Button/Tap). Weckt den AudioContext.
   const enableSound = useCallback(async () => {
-    const Ctx = typeof window !== 'undefined' ? (window.AudioContext ?? window.webkitAudioContext) : undefined;
+    const Ctx =
+      typeof window !== 'undefined'
+        ? (window.AudioContext ?? window.webkitAudioContext)
+        : undefined;
     if (!Ctx) {
       setSoundEnabled(true);
       return;
@@ -36,54 +39,78 @@ export function useReadyFeedback() {
       if (!audioCtxRef.current) audioCtxRef.current = new Ctx();
       await audioCtxRef.current.resume();
 
-      // Versuche kurz die Datei zu spielen (sofern vorhanden), stoppe sofort wieder
+      // Kurz anspielen & stoppen (manche Browser „primen“ so das Element)
       if (audioRef.current) {
         try {
           await audioRef.current.play();
           audioRef.current.pause();
           audioRef.current.currentTime = 0;
         } catch {
-          // Ignorieren – Fallback übernimmt später
+          // ignorieren – Fallback übernimmt später
         }
       }
       setSoundEnabled(true);
     } catch {
-      // Letzter Ausweg: trotzdem als enabled markieren – Beep wird's später versuchen
       setSoundEnabled(true);
     }
   }, []);
 
-  // Fallback-Beep per WebAudio (funktioniert auch ohne /ready.mp3)
+  // Lauterer, gut hörbarer Chime: zwei kurze Akkorde
   const beep = useCallback(async () => {
     try {
-      const Ctx = typeof window !== 'undefined' ? (window.AudioContext ?? window.webkitAudioContext) : undefined;
+      const Ctx =
+        typeof window !== 'undefined'
+          ? (window.AudioContext ?? window.webkitAudioContext)
+          : undefined;
       if (!Ctx) return;
 
       const ctx = audioCtxRef.current ?? new Ctx();
       audioCtxRef.current = ctx;
-      // Sicherstellen, dass der Context läuft
-      try { await ctx.resume(); } catch {}
+      try {
+        await ctx.resume();
+      } catch {}
 
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-      osc.type = 'sine';
-      osc.frequency.value = 880; // A5
+      const playChord = (freqs: number[], start: number, dur = 0.42) => {
+        const master = ctx.createGain();
+        // Hüllkurve: schnell rein, schnell raus, etwas lauter als vorher
+        master.gain.setValueAtTime(0.0001, start);
+        master.gain.exponentialRampToValueAtTime(0.14, start + 0.03);
+        master.gain.exponentialRampToValueAtTime(0.0001, start + dur);
+        master.connect(ctx.destination);
 
-      // Hüllkurve – ausreichend laut aber kurz
-      const now = ctx.currentTime;
-      gain.gain.setValueAtTime(0.0001, now);
-      gain.gain.exponentialRampToValueAtTime(0.08, now + 0.02);
-      gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.45);
+        freqs.forEach((f) => {
+          const osc = ctx.createOscillator();
+          const g = ctx.createGain();
+          osc.type = 'triangle'; // angenehmer als square, lauter als sine
+          osc.frequency.value = f;
+          g.gain.value = 1 / freqs.length; // Mischung
+          osc.connect(g).connect(master);
+          osc.start(start);
+          osc.stop(start + dur);
+        });
+      };
 
-      osc.connect(gain).connect(ctx.destination);
-      osc.start(now);
-      osc.stop(now + 0.46);
+      const now = (audioCtxRef.current ?? ctx).currentTime;
+      // A5 (880), E6 (1319), A6 (1760)
+      playChord([880, 1319, 1760], now, 0.45);
+      // Danach etwas höher
+      playChord([988, 1480, 1976], now + 0.25, 0.38);
     } catch {
-      // ignore – manche Browser ohne Audio
+      // ignore
     }
   }, []);
 
-  // Löst Sound + Vibration aus. Nutzt Datei, fällt zuverlässig auf Beep zurück.
+  // Spürbarere Vibration (Android)
+  const vibrateStrong = useCallback(() => {
+    try {
+      // vibrieren – pause – vibrieren – pause – länger vibrieren
+      navigator.vibrate?.([320, 60, 320, 60, 480]);
+    } catch {
+      /* ignore */
+    }
+  }, []);
+
+  // Löst Sound + Vibration aus. Erst /ready.mp3 versuchen, sonst Chime.
   const trigger = useCallback(() => {
     const tryFile = () => {
       if (!audioRef.current) return false;
@@ -91,9 +118,11 @@ export function useReadyFeedback() {
         audioRef.current.currentTime = 0;
         const p = audioRef.current.play();
         if (p && typeof (p as Promise<void>).then === 'function') {
-          (p as Promise<void>).catch(() => { void beep(); });
+          (p as Promise<void>).catch(() => {
+            void beep();
+          });
         }
-        return true; // Versuch wurde unternommen – Beep wird ggf. im Catch ausgelöst
+        return true; // Versuch unternommen; Fallback ggf. im catch
       } catch {
         return false;
       }
@@ -102,8 +131,8 @@ export function useReadyFeedback() {
     const attempted = tryFile();
     if (!attempted) void beep();
 
-    try { navigator.vibrate?.([220, 80, 260]); } catch {}
-  }, [beep]);
+    vibrateStrong();
+  }, [beep, vibrateStrong]);
 
   return { soundEnabled, enableSound, trigger };
 }
