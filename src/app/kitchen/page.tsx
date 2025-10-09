@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import Link from 'next/link';
 
 export type OrderStatus = 'in_queue' | 'preparing' | 'ready' | 'picked_up';
 export type MenuItem = { id: string; name: string; price_cents: number };
@@ -44,22 +45,25 @@ export default function KitchenPage() {
     return () => clearInterval(t);
   }, [load]);
 
-  const setOrderStatus = useCallback(async (id: string, status: OrderStatus) => {
-    setPendingIds((p) => ({ ...p, [id]: true }));
-    setMutating(true);
-    try {
-      const r = await fetch(`/api/orders/${id}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json', 'x-kitchen-pin': pin },
-        body: JSON.stringify({ status }),
-        cache: 'no-store',
-      });
-      if (!r.ok) throw new Error('patch failed');
-      await load();
-    } catch {}
-    setPendingIds((p) => ({ ...p, [id]: false }));
-    setMutating(false);
-  }, [pin, load]);
+  const setOrderStatus = useCallback(
+    async (id: string, status: OrderStatus) => {
+      setPendingIds((p) => ({ ...p, [id]: true }));
+      setMutating(true);
+      try {
+        const r = await fetch(`/api/orders/${id}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json', 'x-kitchen-pin': pin },
+          body: JSON.stringify({ status }),
+          cache: 'no-store',
+        });
+        if (!r.ok) throw new Error('patch failed');
+        await load();
+      } catch {}
+      setPendingIds((p) => ({ ...p, [id]: false }));
+      setMutating(false);
+    },
+    [pin, load],
+  );
 
   return (
     <div className="min-h-dvh bg-gradient-to-b from-emerald-50 via-white to-white text-gray-800">
@@ -72,7 +76,12 @@ export default function KitchenPage() {
               <p className="text-xs text-gray-500">Bestellungen verwalten</p>
             </div>
           </div>
-          <a href="/" className="rounded-full bg-white px-3 py-1.5 text-sm text-gray-700 ring-1 ring-gray-200 hover:bg-gray-50">Zur Kunden-Ansicht</a>
+          <Link
+            href="/"
+            className="rounded-full bg-white px-3 py-1.5 text-sm text-gray-700 ring-1 ring-gray-200 hover:bg-gray-50"
+          >
+            Zur Kunden-Ansicht
+          </Link>
         </header>
 
         <main className="mt-6">
@@ -84,7 +93,9 @@ export default function KitchenPage() {
             {orders.map((o) => (
               <div key={o.id} className="rounded-2xl border bg-white p-4">
                 <div className="flex items-center justify-between">
-                  <div className="text-sm text-gray-600">ID: <span className="font-mono">{o.id}</span></div>
+                  <div className="text-sm text-gray-600">
+                    ID: <span className="font-mono">{o.id}</span>
+                  </div>
                   <StatusBadge s={o.status} />
                 </div>
 
@@ -109,10 +120,34 @@ export default function KitchenPage() {
                 </div>
 
                 <div className="mt-3 flex flex-wrap gap-2">
-                  <button className="rounded-full bg-gray-100 px-3 py-1.5 text-sm" disabled={pendingIds[o.id] || mutating} onClick={() => setOrderStatus(o.id, 'in_queue')}>In Queue</button>
-                  <button className="rounded-full bg-amber-100 px-3 py-1.5 text-sm text-amber-800" disabled={pendingIds[o.id] || mutating} onClick={() => setOrderStatus(o.id, 'preparing')}>Preparing</button>
-                  <button className="rounded-full bg-emerald-600 px-3 py-1.5 text-sm text-white" disabled={pendingIds[o.id] || mutating} onClick={() => setOrderStatus(o.id, 'ready')}>Ready</button>
-                  <button className="rounded-full bg-sky-100 px-3 py-1.5 text-sm text-sky-800" disabled={pendingIds[o.id] || mutating} onClick={() => setOrderStatus(o.id, 'picked_up')}>Picked up</button>
+                  <button
+                    className="rounded-full bg-gray-100 px-3 py-1.5 text-sm"
+                    disabled={pendingIds[o.id] || mutating}
+                    onClick={() => setOrderStatus(o.id, 'in_queue')}
+                  >
+                    In Queue
+                  </button>
+                  <button
+                    className="rounded-full bg-amber-100 px-3 py-1.5 text-sm text-amber-800"
+                    disabled={pendingIds[o.id] || mutating}
+                    onClick={() => setOrderStatus(o.id, 'preparing')}
+                  >
+                    Preparing
+                  </button>
+                  <button
+                    className="rounded-full bg-emerald-600 px-3 py-1.5 text-sm text-white"
+                    disabled={pendingIds[o.id] || mutating}
+                    onClick={() => setOrderStatus(o.id, 'ready')}
+                  >
+                    Ready
+                  </button>
+                  <button
+                    className="rounded-full bg-sky-100 px-3 py-1.5 text-sm text-sky-800"
+                    disabled={pendingIds[o.id] || mutating}
+                    onClick={() => setOrderStatus(o.id, 'picked_up')}
+                  >
+                    Picked up
+                  </button>
                 </div>
               </div>
             ))}
