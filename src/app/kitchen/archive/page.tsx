@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 
 export type OrderStatus = 'in_queue' | 'preparing' | 'ready' | 'picked_up';
@@ -12,17 +12,29 @@ function formatPrice(cents: number) {
   return (cents / 100).toLocaleString('de-CH', { style: 'currency', currency: 'EUR', minimumFractionDigits: 2 });
 }
 
+function getCookie(name: string) {
+  try {
+    return document.cookie.split('; ').find((x) => x.startsWith(name + '='))?.split('=')[1];
+  } catch {
+    return undefined;
+  }
+}
+
 export default function KitchenArchivePage() {
   const [orders, setOrders] = useState<Order[]>([]);
+  const pin = useMemo(() => decodeURIComponent(getCookie('kpin') || ''), []);
 
   const load = useCallback(async () => {
     try {
-      const r = await fetch('/api/orders?archived=1', { cache: 'no-store' });
+      const r = await fetch('/api/orders?archived=1', {
+        cache: 'no-store',
+        headers: { 'x-kitchen-pin': pin },
+      });
       if (!r.ok) return;
       const list = (await r.json()) as Order[];
       setOrders(list);
     } catch {}
-  }, []);
+  }, [pin]);
 
   useEffect(() => {
     load();
@@ -42,8 +54,12 @@ export default function KitchenArchivePage() {
             </div>
           </div>
           <div className="flex gap-2">
-            <Link href="/kitchen" className="rounded-full bg-white px-3 py-1.5 text-sm text-gray-700 ring-1 ring-gray-200 hover:bg-gray-50">Dashboard</Link>
-            <Link href="/" className="rounded-full bg-white px-3 py-1.5 text-sm text-gray-700 ring-1 ring-gray-200 hover:bg-gray-50">Kunden</Link>
+            <Link href="/kitchen" className="rounded-full bg-white px-3 py-1.5 text-sm text-gray-700 ring-1 ring-gray-200 hover:bg-gray-50">
+              Dashboard
+            </Link>
+            <Link href="/" className="rounded-full bg-white px-3 py-1.5 text-sm text-gray-700 ring-1 ring-gray-200 hover:bg-gray-50">
+              Kunden
+            </Link>
           </div>
         </header>
 
@@ -62,9 +78,7 @@ export default function KitchenArchivePage() {
                 <div className="mt-2 divide-y text-sm">
                   {o.lines.map((l, i) => (
                     <div key={l.id ?? `${l.item?.id ?? 'item'}-${i}`} className="flex items-start justify-between py-2">
-                      <div>
-                        {l.qty}× {l.item?.name || 'Position'}
-                      </div>
+                      <div>{l.qty}× {l.item?.name || 'Position'}</div>
                       <div className="text-gray-500">{formatPrice((l.item?.price_cents ?? 0) * l.qty)}</div>
                     </div>
                   ))}

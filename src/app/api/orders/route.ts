@@ -11,7 +11,10 @@ export type OrderLine = { id: string; item?: MenuItem | null; qty: number; specs
 export type Order = { id: string; lines: OrderLine[]; total_cents: number; status: OrderStatus; created_at?: string; updated_at?: string };
 
 function json(data: unknown, status = 200) {
-  return new NextResponse(JSON.stringify(data), { status, headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' } });
+  return new NextResponse(JSON.stringify(data), {
+    status,
+    headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' },
+  });
 }
 
 // GET: nur für Kitchen – mit PIN-Header
@@ -23,19 +26,30 @@ export async function GET(req: NextRequest) {
 
   const archived = req.nextUrl.searchParams.get('archived') === '1';
 
-  // Bedingung: Archiv = picked_up und älter als 3 Minuten
-  // Ansonsten: alles außer Archiv-Einträge
-  const where = archived
-    ? `status = 'picked_up' AND COALESCE(updated_at, created_at) < now() - interval '3 minutes'`
-    : `NOT (status = 'picked_up' AND COALESCE(updated_at, created_at) < now() - interval '3 minutes')`;
-
-  const rows = (await sql`
-    SELECT id, lines, total_cents, status, created_at, updated_at
-    FROM public.orders
-    WHERE ${sql.raw(where)}
-    ORDER BY created_at DESC
-    LIMIT 100
-  `) as unknown as Order[];
+  let rows: Order[];
+  if (archived) {
+    // Archiv: picked_up & älter als 3 Minuten
+    rows = (await sql`
+      SELECT id, lines, total_cents, status, created_at, updated_at
+      FROM public.orders
+      WHERE status = 'picked_up'
+        AND COALESCE(updated_at, created_at) < now() - interval '3 minutes'
+      ORDER BY created_at DESC
+      LIMIT 100
+    `) as unknown as Order[];
+  } else {
+    // Aktive: alles außer Archiv
+    rows = (await sql`
+      SELECT id, lines, total_cents, status, created_at, updated_at
+      FROM public.orders
+      WHERE NOT (
+        status = 'picked_up'
+        AND COALESCE(updated_at, created_at) < now() - interval '3 minutes'
+      )
+      ORDER BY created_at DESC
+      LIMIT 100
+    `) as unknown as Order[];
+  }
 
   return json(rows, 200);
 }
@@ -45,7 +59,6 @@ export async function POST(req: NextRequest) {
   const body = await req.json().catch(() => ({}));
   const lines = (body?.lines ?? []) as OrderLine[];
   const total_cents = Number(body?.total_cents ?? 0) | 0;
-  // customer_email optional – noch ohne Versand; bewusst nicht gespeichert
 
   if (!Array.isArray(lines) || !lines.length) return json({ error: 'lines required' }, 400);
   if (!Number.isFinite(total_cents) || total_cents <= 0) return json({ error: 'invalid total_cents' }, 400);
