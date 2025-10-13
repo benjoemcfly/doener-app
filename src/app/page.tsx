@@ -276,15 +276,22 @@ export default function Page() {
   return (
     <div className="min-h-dvh bg-gradient-to-b from-emerald-50 via-white to-white text-gray-800">
       {/* Flash-Overlay (Option A) */}
-      {flashOn && <GreenFlash />}
+      {flashOn && <GreenFlash durationMs={flashMs} />}
 
       {/* Sticky Ready-Banner (Option E) */}
       {showReadyBanner && (
         <div className="fixed left-1/2 top-3 z-50 -translate-x-1/2">
           <div className="flex items-center gap-3 rounded-full bg-emerald-600 px-4 py-2 text-white shadow-lg ring-1 ring-emerald-700/40">
-            <span>🥙 Deine Bestellung ist abholbereit</span>
+            <span>🥙 {bannerText || 'Deine Bestellung ist abholbereit'}</span>
             <button
               onClick={() => setShowReadyBanner(false)}
+              className="rounded-full bg-white/15 px-2 py-1 text-sm hover:bg-white/25"
+            >
+              Schließen
+            </button>
+          </div>
+        </div>
+      )}
               className="rounded-full bg-white/15 px-2 py-1 text-sm hover:bg-white/25"
             >
               Schließen
@@ -490,15 +497,16 @@ export default function Page() {
 }
 
 // ========= Zusatz-Komponente: sanftes grünes Aufleuchten =========
-function GreenFlash() {
+function GreenFlash({ durationMs }: { durationMs: number }) {
   const [off, setOff] = useState(false);
   useEffect(() => {
-    const t = setTimeout(() => setOff(true), 50); // start transition
-    return () => clearTimeout(t);
+    const start = setTimeout(() => setOff(true), 50); // start transition
+    return () => clearTimeout(start);
   }, []);
   return (
     <div
-      className={`pointer-events-none fixed inset-0 z-40 bg-emerald-200/60 transition-opacity duration-1000 ${off ? 'opacity-0' : 'opacity-100'}`}
+      className={`pointer-events-none fixed inset-0 z-40 bg-emerald-200/60 transition-opacity ${off ? 'opacity-0' : 'opacity-100'}`}
+      style={{ transitionDuration: `${durationMs}ms` }}
     />
   );
 }
