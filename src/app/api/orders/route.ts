@@ -45,7 +45,7 @@ export async function POST(req: NextRequest) {
   const body = await req.json().catch(() => ({}));
   const lines = (body?.lines ?? []) as OrderLine[];
   const total_cents = Number(body?.total_cents ?? 0) | 0;
-  const customer_email: string | undefined = body?.customer_email ? String(body.customer_email) : undefined;
+  // customer_email optional – noch ohne Versand; bewusst nicht gespeichert
 
   if (!Array.isArray(lines) || !lines.length) return json({ error: 'lines required' }, 400);
   if (!Number.isFinite(total_cents) || total_cents <= 0) return json({ error: 'invalid total_cents' }, 400);
