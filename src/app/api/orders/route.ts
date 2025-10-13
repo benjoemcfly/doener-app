@@ -1,73 +1,62 @@
-// src/app/api/orders/route.ts
 import { NextRequest, NextResponse } from 'next/server';
 import { sql } from '@/lib/db';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
-export const runtime = 'nodejs';
 
-type OrderStatus = 'in_queue' | 'preparing' | 'ready' | 'picked_up';
+// Typen konsistent zur Client-App
+export type OrderStatus = 'in_queue' | 'preparing' | 'ready' | 'picked_up';
+export type MenuItem = { id: string; name: string; price_cents: number };
+export type OrderLine = { id: string; item?: MenuItem | null; qty: number; specs?: Record<string, string[]>; note?: string };
+export type Order = { id: string; lines: OrderLine[]; total_cents: number; status: OrderStatus; created_at?: string; updated_at?: string };
 
-interface MenuItem { id: string; name: string; basePrice: number; description?: string }
-interface Customization { sauce: string; salad: string; extras: string[] }
-interface CartLine { id: string; item: MenuItem; qty: number; custom: Customization }
-
-interface DbOrderRow {
-  id: string;
-  lines: CartLine[];
-  total_cents: number;
-  status: OrderStatus;
-  created_at: string;
-  updated_at?: string;
+function json(data: unknown, status = 200) {
+  return new NextResponse(JSON.stringify(data), { status, headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' } });
 }
 
+// GET: nur für Kitchen – mit PIN-Header
 export async function GET(req: NextRequest) {
-  try {
-    const { searchParams } = new URL(req.url);
-    const raw = searchParams.get('limit');
-    const parsed = raw ? parseInt(raw, 10) : 50;
-    const limit = Number.isFinite(parsed) ? Math.min(Math.max(parsed, 1), 200) : 50;
-
-    const rows = (await sql`
-      SELECT id, lines, total_cents, status, created_at, updated_at
-      FROM public.orders
-      ORDER BY created_at DESC
-      LIMIT ${limit}
-    `) as DbOrderRow[];
-
-    // WICHTIG: keine Umbenennungen – UI erwartet diese Feldnamen!
-    return NextResponse.json(rows, {
-      headers: { 'Cache-Control': 'no-store' },
-    });
-  } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : 'Unknown error';
-    return NextResponse.json({ error: message }, { status: 500 });
+  const pin = req.headers.get('x-kitchen-pin');
+  if (!process.env.KITCHEN_PIN || pin !== process.env.KITCHEN_PIN) {
+    return json({ error: 'forbidden' }, 403);
   }
+
+  const archived = req.nextUrl.searchParams.get('archived') === '1';
+
+  // Bedingung: Archiv = picked_up und älter als 3 Minuten
+  // Ansonsten: alles außer Archiv-Einträge
+  const where = archived
+    ? `status = 'picked_up' AND COALESCE(updated_at, created_at) < now() - interval '3 minutes'`
+    : `NOT (status = 'picked_up' AND COALESCE(updated_at, created_at) < now() - interval '3 minutes')`;
+
+  const rows = (await sql`
+    SELECT id, lines, total_cents, status, created_at, updated_at
+    FROM public.orders
+    WHERE ${sql.raw(where)}
+    ORDER BY created_at DESC
+    LIMIT 100
+  `) as unknown as Order[];
+
+  return json(rows, 200);
 }
 
+// POST: neue Order (öffentlicher Endpunkt)
 export async function POST(req: NextRequest) {
-  try {
-    const body = (await req.json()) as { lines: CartLine[]; total_cents: number; customer_email?: string };
-    const id = crypto.randomUUID();
-    const status: OrderStatus = 'in_queue';
+  const body = await req.json().catch(() => ({}));
+  const lines = (body?.lines ?? []) as OrderLine[];
+  const total_cents = Number(body?.total_cents ?? 0) | 0;
+  const customer_email: string | undefined = body?.customer_email ? String(body.customer_email) : undefined;
 
-    await sql`
-  INSERT INTO public.orders (id, lines, total_cents, status)
-  VALUES (${id}, ${JSON.stringify(body.lines)}::jsonb, ${body.total_cents}, ${status})
-`;
+  if (!Array.isArray(lines) || !lines.length) return json({ error: 'lines required' }, 400);
+  if (!Number.isFinite(total_cents) || total_cents <= 0) return json({ error: 'invalid total_cents' }, 400);
 
-    if (body.customer_email) {
-      try {
-        await sql`UPDATE public.orders SET customer_email = ${body.customer_email} WHERE id = ${id}`;
-      } catch {}
-    }
+  const id = crypto.randomUUID();
+  const status: OrderStatus = 'in_queue';
 
-    return NextResponse.json(
-      { id, status },
-      { status: 201, headers: { 'Cache-Control': 'no-store' } },
-    );
-  } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : 'Unknown error';
-    return NextResponse.json({ error: message }, { status: 500 });
-  }
+  await sql`
+    INSERT INTO public.orders (id, lines, total_cents, status)
+    VALUES (${id}, ${sql.json(lines)}, ${total_cents}, ${status})
+  `;
+
+  return json({ id }, 201);
 }

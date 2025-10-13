@@ -8,20 +8,8 @@ export type MenuItem = { id: string; name: string; price_cents: number };
 export type OrderLine = { id: string; item?: MenuItem | null; qty: number; specs?: Record<string, string[]>; note?: string };
 export type Order = { id: string; lines: OrderLine[]; total_cents: number; status: OrderStatus; created_at?: string; updated_at?: string };
 
-function formatPrice(cents: number) {
-  return (cents / 100).toLocaleString('de-CH', { style: 'currency', currency: 'EUR', minimumFractionDigits: 2 });
-}
-
-function getCookie(name: string) {
-  try {
-    return document.cookie
-      .split('; ')
-      .find((x) => x.startsWith(name + '='))
-      ?.split('=')[1];
-  } catch {
-    return undefined;
-  }
-}
+function formatPrice(cents: number) { return (cents / 100).toLocaleString('de-CH', { style: 'currency', currency: 'EUR', minimumFractionDigits: 2 }); }
+function getCookie(name: string) { try { return document.cookie.split('; ').find((x) => x.startsWith(name + '='))?.split('=')[1]; } catch { return undefined; } }
 
 export default function KitchenPage() {
   const [orders, setOrders] = useState<Order[]>([]);
@@ -39,31 +27,19 @@ export default function KitchenPage() {
     } catch {}
   }, [pin]);
 
-  useEffect(() => {
-    load();
-    const t = setInterval(load, 4000);
-    return () => clearInterval(t);
-  }, [load]);
+  useEffect(() => { load(); const t = setInterval(load, 4000); return () => clearInterval(t); }, [load]);
 
-  const setOrderStatus = useCallback(
-    async (id: string, status: OrderStatus) => {
-      setPendingIds((p) => ({ ...p, [id]: true }));
-      setMutating(true);
-      try {
-        const r = await fetch(`/api/orders/${id}`, {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json', 'x-kitchen-pin': pin },
-          body: JSON.stringify({ status }),
-          cache: 'no-store',
-        });
-        if (!r.ok) throw new Error('patch failed');
-        await load();
-      } catch {}
-      setPendingIds((p) => ({ ...p, [id]: false }));
-      setMutating(false);
-    },
-    [pin, load],
-  );
+  const setOrderStatus = useCallback(async (id: string, status: OrderStatus) => {
+    setPendingIds((p) => ({ ...p, [id]: true }));
+    setMutating(true);
+    try {
+      const r = await fetch(`/api/orders/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', 'x-kitchen-pin': pin }, body: JSON.stringify({ status }), cache: 'no-store' });
+      if (!r.ok) throw new Error('patch failed');
+      await load();
+    } catch {}
+    setPendingIds((p) => ({ ...p, [id]: false }));
+    setMutating(false);
+  }, [pin, load]);
 
   return (
     <div className="min-h-dvh bg-gradient-to-b from-emerald-50 via-white to-white text-gray-800">
@@ -76,78 +52,36 @@ export default function KitchenPage() {
               <p className="text-xs text-gray-500">Bestellungen verwalten</p>
             </div>
           </div>
-          <Link
-            href="/"
-            className="rounded-full bg-white px-3 py-1.5 text-sm text-gray-700 ring-1 ring-gray-200 hover:bg-gray-50"
-          >
-            Zur Kunden-Ansicht
-          </Link>
+          <div className="flex gap-2">
+            <Link href="/" className="rounded-full bg-white px-3 py-1.5 text-sm text-gray-700 ring-1 ring-gray-200 hover:bg-gray-50">Kunden-Ansicht</Link>
+            <Link href="/kitchen/archive" className="rounded-full bg-white px-3 py-1.5 text-sm text-gray-700 ring-1 ring-gray-200 hover:bg-gray-50">Archiv</Link>
+          </div>
         </header>
 
         <main className="mt-6">
           <div className="grid grid-cols-1 gap-3">
-            {orders.length === 0 && (
-              <div className="rounded-2xl border bg-white p-4 text-sm text-gray-500">Keine Bestellungen.</div>
-            )}
-
+            {orders.length === 0 && (<div className="rounded-2xl border bg-white p-4 text-sm text-gray-500">Keine Bestellungen.</div>)}
             {orders.map((o) => (
               <div key={o.id} className="rounded-2xl border bg-white p-4">
                 <div className="flex items-center justify-between">
-                  <div className="text-sm text-gray-600">
-                    ID: <span className="font-mono">{o.id}</span>
-                  </div>
+                  <div className="text-sm text-gray-600">ID: <span className="font-mono">{o.id}</span></div>
                   <StatusBadge s={o.status} />
                 </div>
-
                 <div className="mt-2 divide-y text-sm">
                   {o.lines.map((l, i) => (
                     <div key={l.id ?? `${l.item?.id ?? 'item'}-${i}`} className="flex items-start justify-between py-2">
                       <div>
                         {l.qty}× {l.item?.name || 'Position'}
-                        {l.specs && Object.keys(l.specs).length > 0 && (
-                          <div className="text-xs text-gray-600">
-                            {Object.entries(l.specs).map(([gid, arr]) => (
-                              <span key={gid} className="mr-2">
-                                <span className="font-medium">{gid}:</span> {arr.join(', ')}
-                              </span>
-                            ))}
-                          </div>
-                        )}
                       </div>
                       <div className="text-gray-500">{formatPrice((l.item?.price_cents ?? 0) * l.qty)}</div>
                     </div>
                   ))}
                 </div>
-
                 <div className="mt-3 flex flex-wrap gap-2">
-                  <button
-                    className="rounded-full bg-gray-100 px-3 py-1.5 text-sm"
-                    disabled={pendingIds[o.id] || mutating}
-                    onClick={() => setOrderStatus(o.id, 'in_queue')}
-                  >
-                    In Queue
-                  </button>
-                  <button
-                    className="rounded-full bg-amber-100 px-3 py-1.5 text-sm text-amber-800"
-                    disabled={pendingIds[o.id] || mutating}
-                    onClick={() => setOrderStatus(o.id, 'preparing')}
-                  >
-                    Preparing
-                  </button>
-                  <button
-                    className="rounded-full bg-emerald-600 px-3 py-1.5 text-sm text-white"
-                    disabled={pendingIds[o.id] || mutating}
-                    onClick={() => setOrderStatus(o.id, 'ready')}
-                  >
-                    Ready
-                  </button>
-                  <button
-                    className="rounded-full bg-sky-100 px-3 py-1.5 text-sm text-sky-800"
-                    disabled={pendingIds[o.id] || mutating}
-                    onClick={() => setOrderStatus(o.id, 'picked_up')}
-                  >
-                    Picked up
-                  </button>
+                  <button className="rounded-full bg-gray-100 px-3 py-1.5 text-sm" disabled={pendingIds[o.id] || mutating} onClick={() => setOrderStatus(o.id, 'in_queue')}>In Queue</button>
+                  <button className="rounded-full bg-amber-100 px-3 py-1.5 text-sm text-amber-800" disabled={pendingIds[o.id] || mutating} onClick={() => setOrderStatus(o.id, 'preparing')}>Preparing</button>
+                  <button className="rounded-full bg-emerald-600 px-3 py-1.5 text-sm text-white" disabled={pendingIds[o.id] || mutating} onClick={() => setOrderStatus(o.id, 'ready')}>Ready</button>
+                  <button className="rounded-full bg-sky-100 px-3 py-1.5 text-sm text-sky-800" disabled={pendingIds[o.id] || mutating} onClick={() => setOrderStatus(o.id, 'picked_up')}>Picked up</button>
                 </div>
               </div>
             ))}
