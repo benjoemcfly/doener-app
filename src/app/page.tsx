@@ -138,7 +138,9 @@ export default function Page() {
 
   // Ready-UI: Banner + Flash
   const [showReadyBanner, setShowReadyBanner] = useState(false);
+  const [bannerText, setBannerText] = useState<string>('');
   const [flashOn, setFlashOn] = useState(false);
+  const [flashMs, setFlashMs] = useState<number>(1500);
   const allReadyRef = useRef(false);
 
   // Benachrichtigung pro Order einmalig
@@ -184,11 +186,16 @@ export default function Page() {
           if (stopped) return;
           updated[id] = o;
 
-          // Einzel-Benachrichtigung
+          // Einzel-Benachrichtigung (Sound + Vibration + Banner + kurzer Flash)
           if (o.status === 'ready' && !notifiedRef.current[id]) {
             notifiedRef.current[id] = true;
             trigger();
-            try { navigator.serviceWorker?.controller?.postMessage({ type: 'VIBRATE', body: 'Deine Bestellung ist ready!' }); } catch {}
+            try { navigator.serviceWorker?.controller?.postMessage({ type: 'VIBRATE', body: 'Eine Bestellung ist abholbereit!' }); } catch {}
+            setBannerText('Eine Bestellung ist abholbereit');
+            setShowReadyBanner(true);
+            setFlashMs(1500);
+            setFlashOn(true);
+            setTimeout(() => setFlashOn(false), 1500);
           }
         } catch {}
       }
@@ -199,10 +206,11 @@ export default function Page() {
         // Wechsel: nicht vorher allReady -> jetzt allReady
         if (allKnown && !allReadyRef.current) {
           allReadyRef.current = true;
+          setBannerText('Alle Bestellungen sind abholbereit');
           setShowReadyBanner(true);
+          setFlashMs(3000); // doppelt so lang wie Einzel-Flash
           setFlashOn(true);
-          // Flash automatisch zurückfahren
-          setTimeout(() => setFlashOn(false), 1500);
+          setTimeout(() => setFlashOn(false), 3000);
         }
         // Falls eine neue Bestellung reinkommt / Status zurück fällt
         if (!allKnown) {
@@ -242,7 +250,7 @@ export default function Page() {
       const { id } = (await r.json()) as { id: string };
       setCart([]);
       setTab('status');
-      // Neue Bestellung -> Ready-Banner zurücksetzen
+      // Neue Bestellung -> Ready-Banner/Flash zurücksetzen
       setShowReadyBanner(false);
       allReadyRef.current = false;
       setFlashOn(false);
@@ -275,24 +283,17 @@ export default function Page() {
   // ==========================
   return (
     <div className="min-h-dvh bg-gradient-to-b from-emerald-50 via-white to-white text-gray-800">
-      {/* Flash-Overlay (Option A) */}
+      {/* Flash-Overlay */}
       {flashOn && <GreenFlash durationMs={flashMs} />}
 
-      {/* Sticky Ready-Banner (Option E) */}
+      {/* Sticky Ready-Banner */}
       {showReadyBanner && (
         <div className="fixed left-1/2 top-3 z-50 -translate-x-1/2">
           <div className="flex items-center gap-3 rounded-full bg-emerald-600 px-4 py-2 text-white shadow-lg ring-1 ring-emerald-700/40">
             <span>🥙 {bannerText || 'Deine Bestellung ist abholbereit'}</span>
             <button
               onClick={() => setShowReadyBanner(false)}
-              className="rounded-full bg-white/15 px-2 py-1 text-sm hover:bg-white/25"
-            >
-              Schließen
-            </button>
-          </div>
-        </div>
-      )}
-              className="rounded-full bg-white/15 px-2 py-1 text-sm hover:bg-white/25"
+              className="rounded-full px-2 py-1 text-sm bg-white bg-opacity-20 hover:bg-opacity-30 transition"
             >
               Schließen
             </button>
