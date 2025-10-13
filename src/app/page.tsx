@@ -86,6 +86,7 @@ export default function Page() {
   // Warenkorb
   const [cart, setCart] = useState<OrderLine[]>([]);
   const lines = cart;
+  const miniCartRef = useRef<HTMLDivElement | null>(null);
 
   // Customize-Modal
   const [customizing, setCustomizing] = useState<{ item: MenuItem; specs: Record<string, string[]> } | null>(null);
@@ -155,7 +156,12 @@ export default function Page() {
 
   // Cart helpers
   const addToCart = useCallback((mi: MenuItem, specs?: Record<string, string[]>) => {
-    setCart((prev) => [...prev, { id: crypto.randomUUID(), item: mi, qty: 1, specs: specs ?? {}, note: '' }]);
+    setCart((prev) => {
+      const next = [...prev, { id: crypto.randomUUID(), item: mi, qty: 1, specs: specs ?? {}, note: '' }];
+      // Nach dem Hinzufügen zum Mini-Warenkorb scrollen
+      queueMicrotask(() => miniCartRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }));
+      return next;
+    });
   }, []);
   const adjustQty = useCallback((id: string, delta: number) => {
     setCart((prev) => prev.map((l) => (l.id === id ? { ...l, qty: Math.max(0, l.qty + delta) } : l)).filter((l) => l.qty > 0));
@@ -239,6 +245,17 @@ export default function Page() {
                     </div>
                   </article>
                 ))}
+              </div>
+
+              {/* Mini-Warenkorb direkt unterhalb */}
+              <div ref={miniCartRef} className="mt-6">
+                <MiniCart
+                  lines={lines}
+                  totalCents={totalCents}
+                  onAdjustQty={adjustQty}
+                  onRemoveLine={removeLine}
+                  onGoCheckout={() => setTab('checkout')}
+                />
               </div>
             </section>
           )}
@@ -350,7 +367,7 @@ export default function Page() {
             item={customizing.item}
             initialSpecs={customizing.specs}
             onCancel={() => setCustomizing(null)}
-            onConfirm={(specs) => { addToCart(customizing.item, specs); setCustomizing(null); setTab('checkout'); }}
+            onConfirm={(specs) => { addToCart(customizing.item, specs); setCustomizing(null); /* nicht direkt zur Kasse, Mini-Cart zeigt Button */ }}
           />
         </Dialog>
       )}
@@ -426,6 +443,74 @@ function CustomizeCard({ item, initialSpecs, onCancel, onConfirm }: { item: Menu
         <button className="rounded-xl bg-white px-4 py-2 text-sm ring-1 ring-gray-200" onClick={onCancel}>Abbrechen</button>
         <button className="rounded-xl bg-emerald-600 px-4 py-2 text-sm text-white disabled:opacity-50" onClick={() => onConfirm(specs)} disabled={!canConfirm}>Hinzufügen</button>
       </div>
+    </div>
+  );
+}
+
+// Mini-Warenkorb-Komponente (unter Menü sichtbar)
+function MiniCart({
+  lines,
+  totalCents,
+  onAdjustQty,
+  onRemoveLine,
+  onGoCheckout,
+}: {
+  lines: OrderLine[];
+  totalCents: number;
+  onAdjustQty: (id: string, delta: number) => void;
+  onRemoveLine: (id: string) => void;
+  onGoCheckout: () => void;
+}) {
+  return (
+    <div className="rounded-2xl border bg-white p-4 shadow-sm">
+      <div className="flex items-center justify-between">
+        <h3 className="text-base font-semibold">Dein Warenkorb</h3>
+        <div className="text-sm text-gray-500">{lines.length} Artikel</div>
+      </div>
+
+      {lines.length === 0 ? (
+        <p className="mt-2 text-sm text-gray-500">Noch leer – wähle ein Gericht aus.</p>
+      ) : (
+        <>
+          <ul className="mt-3 divide-y text-sm">
+            {lines.map((l) => (
+              <li key={l.id} className="flex items-start justify-between py-2">
+                <div>
+                  <div className="font-medium">{l.item?.name}</div>
+                  {l.specs && Object.keys(l.specs).length > 0 && (
+                    <div className="text-xs text-gray-600">
+                      {Object.entries(l.specs).map(([gid, arr]) => (
+                        <span key={gid} className="mr-2">{arr.join(', ')}</span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+                <div className="text-right">
+                  <div className="text-gray-500">{formatPrice((l.item?.price_cents ?? 0) * l.qty)}</div>
+                  <div className="mt-1 flex items-center justify-end gap-2">
+                    <button className="rounded-full bg-gray-100 px-2 py-1" onClick={() => onAdjustQty(l.id, -1)}>-</button>
+                    <span className="min-w-6 text-center">{l.qty}</span>
+                    <button className="rounded-full bg-gray-100 px-2 py-1" onClick={() => onAdjustQty(l.id, +1)}>+</button>
+                    <button className="text-xs text-red-600" onClick={() => onRemoveLine(l.id)}>Entfernen</button>
+                  </div>
+                </div>
+              </li>
+            ))}
+          </ul>
+
+          <div className="mt-3 flex items-center justify-between">
+            <div className="text-sm">Zwischensumme</div>
+            <div className="text-base font-semibold">{formatPrice(totalCents)}</div>
+          </div>
+
+          <button
+            className="mt-3 w-full rounded-xl bg-emerald-600 px-4 py-2 text-white shadow hover:bg-emerald-700"
+            onClick={onGoCheckout}
+          >
+            Zur Kasse
+          </button>
+        </>
+      )}
     </div>
   );
 }
