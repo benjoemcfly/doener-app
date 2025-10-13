@@ -2,8 +2,6 @@
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-// NOTE: entfernt: import clsx from "clsx"; (verursachte Module-not-found)
-// NOTE: entfernt: import useReadyFeedback from "@/useReadyFeedback"; (optional nicht vorhanden)
 
 // --- kleiner Helper, um classNames ohne Abhängigkeit zu kombinieren ---
 function cx(...parts: Array<string | false | null | undefined>) {
@@ -11,31 +9,42 @@ function cx(...parts: Array<string | false | null | undefined>) {
 }
 
 // --- lokaler Fallback-Hook für Ready-Feedback (Sound + Vibration) ---
-// Wenn du später die Projekt-Variante nutzen willst, kannst du die lokale
-// Implementierung ignorieren und wieder `@/useReadyFeedback` importieren.
 function useReadyFeedbackLocal() {
-  const playedRef = useRef(false);
   return () => {
     // WebAudio Beep (kurz)
     try {
-      const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
-      const o = ctx.createOscillator();
-      const g = ctx.createGain();
-      o.type = "sine";
-      o.frequency.value = 880; // A5
-      o.connect(g);
-      g.connect(ctx.destination);
-      g.gain.setValueAtTime(0.0001, ctx.currentTime);
-      g.gain.exponentialRampToValueAtTime(0.2, ctx.currentTime + 0.01);
-      o.start();
-      o.stop(ctx.currentTime + 0.15);
-      o.onended = () => ctx.close();
-    } catch {}
+      const AC: typeof AudioContext | undefined =
+        typeof window !== "undefined"
+          ? (window as unknown as { AudioContext?: typeof AudioContext; webkitAudioContext?: typeof AudioContext }).AudioContext ||
+            (window as unknown as { AudioContext?: typeof AudioContext; webkitAudioContext?: typeof AudioContext }).webkitAudioContext
+          : undefined;
+      if (AC) {
+        const ctx = new AC();
+        const o = ctx.createOscillator();
+        const g = ctx.createGain();
+        o.type = "sine";
+        o.frequency.value = 880; // A5
+        o.connect(g);
+        g.connect(ctx.destination);
+        g.gain.setValueAtTime(0.0001, ctx.currentTime);
+        g.gain.exponentialRampToValueAtTime(0.2, ctx.currentTime + 0.01);
+        o.start();
+        o.stop(ctx.currentTime + 0.15);
+        o.onended = () => ctx.close();
+      }
+    } catch {
+      // ignore
+    }
 
     // SW/Tab-Vibration (falls erlaubt)
     try {
-      if (navigator?.vibrate) navigator.vibrate([180]);
-    } catch {}
+      if (typeof navigator !== "undefined" && "vibrate" in navigator) {
+        // @ts-expect-error: vibrate existiert im Browser
+        navigator.vibrate([180]);
+      }
+    } catch {
+      // ignore
+    }
   };
 }
 
@@ -59,6 +68,20 @@ export type Order = {
   updated_at?: string;
 };
 
+function isRecord(x: unknown): x is Record<string, unknown> {
+  return typeof x === "object" && x !== null;
+}
+
+function isOrder(x: unknown): x is Order {
+  if (!isRecord(x)) return false;
+  return (
+    typeof x.id === "string" &&
+    Array.isArray(x.lines) &&
+    typeof x.total_cents === "number" &&
+    typeof x.status === "string"
+  );
+}
+
 // =========================
 // Local storage helpers (Session-Persistenz der Order-IDs)
 // =========================
@@ -69,7 +92,7 @@ function readStoredIds(): string[] {
   try {
     const raw = localStorage.getItem(LS_KEY);
     if (!raw) return [];
-    const parsed = JSON.parse(raw);
+    const parsed = JSON.parse(raw) as unknown;
     return Array.isArray(parsed) ? (parsed.filter((x) => typeof x === "string") as string[]) : [];
   } catch {
     return [];
@@ -109,9 +132,12 @@ async function fetchOrder(id: string): Promise<Order | null> {
       cache: "no-store",
     });
     if (!res.ok) return null;
-    const data = (await res.json()) as { order: Order } | Order;
-    const order = (data as any).order ?? data;
-    return order as Order;
+    const data = (await res.json()) as unknown;
+    if (isOrder(data)) return data;
+    if (isRecord(data) && isOrder((data as Record<string, unknown>).order)) {
+      return (data as Record<string, unknown>).order as Order;
+    }
+    return null;
   } catch {
     return null;
   }
@@ -131,10 +157,15 @@ async function createOrder(payload: { lines: OrderLine[]; total_cents: number })
     }),
   });
   if (!res.ok) throw new Error(`Order create failed (${res.status})`);
-  const data = (await res.json()) as { id?: string; order?: Order } | Order;
-  const id = (data as any).id ?? (data as any).order?.id;
-  if (!id || typeof id !== "string") throw new Error("No order id returned");
-  return id as string;
+  const data = (await res.json()) as unknown;
+  let id: string | null = null;
+  if (isRecord(data) && typeof (data as Record<string, unknown>).id === "string") {
+    id = (data as Record<string, unknown>).id as string;
+  } else if (isRecord(data) && isOrder((data as Record<string, unknown>).order)) {
+    id = ((data as Record<string, unknown>).order as Order).id;
+  }
+  if (!id) throw new Error("No order id returned");
+  return id;
 }
 
 // =========================
@@ -205,7 +236,7 @@ function OrderStatusList() {
     setOrders((cur) => ({ ...cur, [id]: next }));
 
     if (next && next.status === "ready" && !alertedRef.current.has(id)) {
-      try { readyFeedback(); } catch {}
+      try { readyFeedback(); } catch { /* ignore */ }
       alertedRef.current.add(id);
     }
   }, [readyFeedback]);
@@ -249,7 +280,7 @@ function OrderStatusList() {
       {sortedIds.map((id) => {
         const o = orders[id];
         return (
-          <div key={id} className={cx("rounded-2xl border p-3 sm:p-4 shadow-sm", o?.status === "picked_up" && "opacity-70")}> 
+          <div key={id} className={cx("rounded-2xl border p-3 sm:p-4 shadow-sm", o?.status === "picked_up" && "opacity-70")}>
             <div className="flex items-center justify-between gap-2">
               <div className="text-xs font-mono text-slate-500">#{id}</div>
               {o?.status && <StatusBadge status={o.status} />}
@@ -313,8 +344,8 @@ function DemoMenuAndCart({ onSubmit }: { onSubmit: (payload: { lines: OrderLine[
     setErr(null);
     try {
       await onSubmit({ lines, total_cents: total });
-    } catch (e: any) {
-      setErr(e?.message || "Fehler beim Bestellen");
+    } catch (e: unknown) {
+      setErr(e instanceof Error ? e.message : "Fehler beim Bestellen");
     } finally {
       setBusy(false);
     }
