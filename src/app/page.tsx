@@ -193,6 +193,15 @@ export default function Page() {
     }
   }, [cart, totalCents, customerEmail, persistIds]);
 
+  // Beim Klick auf ein Gericht sofort das Customize-Menü öffnen (statt Buttons)
+  const openCustomize = useCallback((m: MenuItem) => {
+    const initialSpecs = (m.options || []).reduce<Record<string, string[]>>((acc, g) => {
+      acc[g.id] = g.type === 'single' && g.required && g.choices.length > 0 ? [g.choices[0].id] : [];
+      return acc;
+    }, {});
+    setCustomizing({ item: m, specs: initialSpecs });
+  }, []);
+
   // ==========================
   // UI
   // ==========================
@@ -231,17 +240,21 @@ export default function Page() {
               <h2 className="text-lg font-semibold">Wähle dein Gericht</h2>
               <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
                 {MENU.map((m) => (
-                  <article key={m.id} className="group rounded-2xl border bg-white p-4 shadow-sm transition hover:shadow-md">
+                  <article
+                    key={m.id}
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => openCustomize(m)}
+                    onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && openCustomize(m)}
+                    className="group cursor-pointer rounded-2xl border bg-white p-4 shadow-sm transition hover:shadow-md focus:outline-none focus:ring-2 focus:ring-emerald-400"
+                  >
                     <div className="flex items-start justify-between">
                       <div>
                         <div className="text-2xl">{m.emoji ?? '🥙'}</div>
                         <h3 className="mt-1 text-base font-semibold">{m.name}</h3>
                         <div className="text-sm text-gray-500">{formatPrice(m.price_cents)}</div>
+                        <div className="mt-2 text-xs text-emerald-700">Tippe um zu konfigurieren</div>
                       </div>
-                    </div>
-                    <div className="mt-4 flex gap-2">
-                      <button className="flex-1 rounded-xl bg-emerald-600 px-3 py-2 text-sm font-medium text-white shadow hover:bg-emerald-700" onClick={() => addToCart(m)}>Schnell hinzufügen</button>
-                      <button className="flex-1 rounded-xl bg-white px-3 py-2 text-sm font-medium text-emerald-700 ring-1 ring-emerald-600/30 hover:bg-emerald-50" onClick={() => setCustomizing({ item: m, specs: (m.options || []).reduce<Record<string, string[]>>((acc, g) => { acc[g.id] = g.type === 'single' && g.required && g.choices.length > 0 ? [g.choices[0].id] : []; return acc; }, {}) })}>Anpassen & hinzufügen</button>
                     </div>
                   </article>
                 ))}
@@ -367,7 +380,7 @@ export default function Page() {
             item={customizing.item}
             initialSpecs={customizing.specs}
             onCancel={() => setCustomizing(null)}
-            onConfirm={(specs) => { addToCart(customizing.item, specs); setCustomizing(null); /* nicht direkt zur Kasse, Mini-Cart zeigt Button */ }}
+            onConfirm={(specs) => { addToCart(customizing.item, specs); setCustomizing(null); /* Mini-Cart zeigt Button zur Kasse */ }}
           />
         </Dialog>
       )}
