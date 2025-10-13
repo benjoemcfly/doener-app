@@ -4,7 +4,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useReadyFeedback } from '@/hooks/useReadyFeedback';
 
 // ==========================
-// Typen (keine Umbenennungen; neue Felder nur optional)
+// Typen (konsistent halten)
 // ==========================
 export type OrderStatus = 'in_queue' | 'preparing' | 'ready' | 'picked_up';
 
@@ -72,6 +72,7 @@ function formatPrice(cents: number) {
   return (cents / 100).toLocaleString('de-CH', { style: 'currency', currency: 'EUR', minimumFractionDigits: 2 });
 }
 function sumCart(lines: OrderLine[]) { return lines.reduce((acc, l) => acc + (l.item?.price_cents ?? 0) * l.qty, 0); }
+const LS_KEY = 'order_ids_v1';
 
 // ==========================
 // Tabs (nur Kunden-Ansicht)
@@ -90,37 +91,67 @@ export default function Page() {
   const [customizing, setCustomizing] = useState<{ item: MenuItem; specs: Record<string, string[]> } | null>(null);
 
   const [customerEmail, setCustomerEmail] = useState('');
-  const [activeOrderId, setActiveOrderId] = useState<string | null>(null);
-  const [activeOrder, setActiveOrder] = useState<Order | null>(null);
 
-  const alreadyNotifiedRef = useRef(false);
+  // 🔁 Mehrere Bestellungen: IDs & Map mit Daten
+  const [orderIds, setOrderIds] = useState<string[]>([]); // neueste zuerst
+  const [ordersById, setOrdersById] = useState<Record<string, Order | null>>({});
+
+  // Benachrichtigung pro Order einmalig
+  const notifiedRef = useRef<Record<string, boolean>>({});
   const { soundEnabled, enableSound, trigger } = useReadyFeedback();
 
-  // Service Worker registrieren (für Vibration)
+  // Service Worker registrieren (für Vibration im aktiven Tab)
   useEffect(() => {
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('/sw.js').catch(() => {});
     }
   }, []);
 
-  // Status-Polling für aktive Order
+  // Order-IDs aus localStorage laden
   useEffect(() => {
-    if (!activeOrderId) return;
-    const id = setInterval(async () => {
-      try {
-        const r = await fetch(`/api/orders/${activeOrderId}`, { cache: 'no-store' });
-        if (!r.ok) return;
-        const o = (await r.json()) as Order;
-        setActiveOrder(o);
-        if (o.status === 'ready' && !alreadyNotifiedRef.current) {
-          alreadyNotifiedRef.current = true;
-          trigger();
-          try { navigator.serviceWorker?.controller?.postMessage({ type: 'VIBRATE', body: 'Deine Bestellung ist ready!' }); } catch {}
-        }
-      } catch {}
-    }, 5000);
-    return () => clearInterval(id);
-  }, [activeOrderId, trigger]);
+    try {
+      const raw = localStorage.getItem(LS_KEY);
+      if (!raw) return;
+      const ids = JSON.parse(raw) as string[];
+      if (Array.isArray(ids) && ids.length) {
+        setOrderIds(ids);
+      }
+    } catch {}
+  }, []);
+
+  // Helper: Order-IDs in localStorage speichern
+  const persistIds = useCallback((ids: string[]) => {
+    try { localStorage.setItem(LS_KEY, JSON.stringify(ids)); } catch {}
+  }, []);
+
+  // Polling aller bekannten Orders (alle 5s)
+  useEffect(() => {
+    if (orderIds.length === 0) return;
+
+    let stopped = false;
+    const fetchAll = async () => {
+      for (const id of orderIds) {
+        try {
+          const r = await fetch(`/api/orders/${id}`, { cache: 'no-store' });
+          if (!r.ok) continue;
+          const o = (await r.json()) as Order;
+          if (stopped) return;
+          setOrdersById((prev) => ({ ...prev, [id]: o }));
+
+          if (o.status === 'ready' && !notifiedRef.current[id]) {
+            notifiedRef.current[id] = true;
+            trigger();
+            try { navigator.serviceWorker?.controller?.postMessage({ type: 'VIBRATE', body: 'Deine Bestellung ist ready!' }); } catch {}
+          }
+        } catch {}
+      }
+    };
+
+    // sofort initial
+    fetchAll();
+    const t = setInterval(fetchAll, 5000);
+    return () => { stopped = true; clearInterval(t); };
+  }, [orderIds, trigger]);
 
   // Cart helpers
   const addToCart = useCallback((mi: MenuItem, specs?: Record<string, string[]>) => {
@@ -132,22 +163,29 @@ export default function Page() {
   const removeLine = useCallback((id: string) => setCart((prev) => prev.filter((l) => l.id !== id)), []);
   const totalCents = useMemo(() => sumCart(lines), [lines]);
 
-  // Order erstellen
+  // Bestellung erstellen → neue ID **vorne** einfügen, IDs persistieren, Status-Tab zeigen
   const createOrder = useCallback(async () => {
     if (!cart.length) return;
     const payload = { lines: cart, total_cents: totalCents, customer_email: customerEmail || undefined };
     const r = await fetch('/api/orders', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload), cache: 'no-store' });
     if (r.ok) {
       const { id } = (await r.json()) as { id: string };
-      setActiveOrderId(id);
-      setActiveOrder(null);
       setCart([]);
       setTab('status');
-      alreadyNotifiedRef.current = false;
+      // vorne einfügen (neueste oben)
+      setOrderIds((prev) => {
+        const next = [id, ...prev.filter((x) => x !== id)];
+        persistIds(next);
+        return next;
+      });
+      // optional Platzhalter, bis Poll kommt
+      setOrdersById((prev) => ({ ...prev, [id]: null }));
+      // Benachrichtigungs-Flag zurücksetzen
+      notifiedRef.current[id] = false;
     } else {
       alert('Fehler beim Absenden');
     }
-  }, [cart, totalCents, customerEmail]);
+  }, [cart, totalCents, customerEmail, persistIds]);
 
   // ==========================
   // UI
@@ -257,34 +295,48 @@ export default function Page() {
           {tab === 'status' && (
             <section>
               <h2 className="text-lg font-semibold">Bestellstatus</h2>
-              {!activeOrderId ? (
+              {orderIds.length === 0 ? (
                 <p className="mt-3 text-sm text-gray-500">Noch keine Bestellung gesendet.</p>
-              ) : activeOrder ? (
-                <div className="mt-3 rounded-2xl border bg-white p-4">
-                  <div className="flex items-center justify-between">
-                    <div className="text-sm text-gray-600">ID: <span className="font-mono">{activeOrder.id}</span></div>
-                    <StatusBadge s={activeOrder.status} />
-                  </div>
-                  <ul className="mt-3 divide-y text-sm">
-                    {activeOrder.lines.map((l) => (
-                      <li key={l.id} className="flex items-start justify-between py-2">
-                        <div>
-                          {l.qty}× {l.item?.name}
-                          {l.specs && Object.keys(l.specs).length > 0 && (
-                            <div className="text-xs text-gray-600">
-                              {Object.entries(l.specs).map(([gid, arr]) => (
-                                <span key={gid} className="mr-2"><span className="font-medium">{labelForGroup(gid, l.item)}:</span> {arr.map((cid) => labelForChoice(gid, cid, l.item)).join(', ')}</span>
-                              ))}
-                            </div>
-                          )}
-                        </div>
-                        <div className="text-gray-500">{formatPrice((l.item?.price_cents ?? 0) * l.qty)}</div>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
               ) : (
-                <p className="mt-3 text-sm text-gray-500">Lade Status…</p>
+                <div className="mt-3 space-y-3">
+                  {orderIds.map((id) => {
+                    const o = ordersById[id];
+                    return (
+                      <div key={id} className="rounded-2xl border bg-white p-4">
+                        <div className="flex items-center justify-between">
+                          <div className="text-sm text-gray-600">ID: <span className="font-mono">{id}</span></div>
+                          <StatusBadge s={o?.status ?? 'in_queue'} />
+                        </div>
+                        {!o ? (
+                          <p className="mt-2 text-sm text-gray-500">Lade Status…</p>
+                        ) : (
+                          <>
+                            <ul className="mt-3 divide-y text-sm">
+                              {o.lines.map((l) => (
+                                <li key={l.id} className="flex items-start justify-between py-2">
+                                  <div>
+                                    {l.qty}× {l.item?.name}
+                                    {l.specs && Object.keys(l.specs).length > 0 && (
+                                      <div className="text-xs text-gray-600">
+                                        {Object.entries(l.specs).map(([gid, arr]) => (
+                                          <span key={gid} className="mr-2"><span className="font-medium">{labelForGroup(gid, l.item)}:</span> {arr.map((cid) => labelForChoice(gid, cid, l.item)).join(', ')}</span>
+                                        ))}
+                                      </div>
+                                    )}
+                                  </div>
+                                  <div className="text-gray-500">{formatPrice((l.item?.price_cents ?? 0) * l.qty)}</div>
+                                </li>
+                              ))}
+                            </ul>
+                            <div className="mt-2 text-right text-xs text-gray-500">
+                              aktualisiert: {new Date(o.updated_at || o.created_at || '').toLocaleString()}
+                            </div>
+                          </>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
               )}
             </section>
           )}
@@ -316,7 +368,7 @@ function StatusBadge({ s }: { s: OrderStatus }) {
     ready: { text: 'Ready', cls: 'bg-emerald-600 text-white' },
     picked_up: { text: 'Picked up', cls: 'bg-sky-100 text-sky-800' },
   };
-  const it = map[s];
+  const it = map[s] ?? map.in_queue;
   return <span className={`rounded-full px-2.5 py-1 text-xs ${it.cls}`}>{it.text}</span>;
 }
 function labelForGroup(groupId: string, item?: MenuItem | null) {
