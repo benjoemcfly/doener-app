@@ -11,7 +11,7 @@ export type OrderStatus = 'in_queue' | 'preparing' | 'ready' | 'picked_up';
 export type MenuItem = {
   id: string;
   name: string;
-  price_cents: number;
+  price_cents: number; // Preise in Rappen/"cents"
   emoji?: string;
   options?: OptionGroup[];
 };
@@ -42,14 +42,10 @@ export type Order = {
 };
 
 // ==========================
-// Demo-Menü mit Options-Gruppen (nur UI)
+// Kategorien & Menüdaten (aus Website abgeleitet)
 // ==========================
-const MENU: MenuItem[] = [
-  { id: 'doener', name: 'Döner Kebab', price_cents: 850, emoji: '🥙', options: baseOptionGroups() },
-  { id: 'durum', name: 'Dürüm', price_cents: 900, emoji: '🌯', options: baseOptionGroups() },
-  { id: 'box', name: 'Döner Box', price_cents: 800, emoji: '🍱', options: baseOptionGroups({ includeBread: false }) },
-  { id: 'lama', name: 'Lahmacun', price_cents: 700, emoji: '🫓', options: baseOptionGroups({ limitedSalad: true }) },
-];
+const CATEGORY_TABS = ['Döner', 'Folded', 'Pide', 'Bowls', 'Vegan', 'Fingerfood', 'Getränke'] as const;
+export type Category = (typeof CATEGORY_TABS)[number];
 
 function baseOptionGroups(opts?: { includeBread?: boolean; limitedSalad?: boolean }): OptionGroup[] {
   const includeBread = opts?.includeBread ?? true;
@@ -65,11 +61,53 @@ function baseOptionGroups(opts?: { includeBread?: boolean; limitedSalad?: boolea
   return groups;
 }
 
+// Menü-Einträge pro Kategorie (Preise in CHF -> *100)
+const MENU_BY_CATEGORY: Record<Category, MenuItem[]> = {
+  Döner: [
+    { id: 'doener_kebab', name: 'Döner Kebab', price_cents: 1900, emoji: '🥙', options: baseOptionGroups() },
+    { id: 'durum_kebab', name: 'Dürüm Kebab', price_cents: 2000, emoji: '🌯', options: baseOptionGroups() },
+    { id: 'doener_box', name: 'Döner Box', price_cents: 2100, emoji: '🍱', options: baseOptionGroups({ includeBread: false }) },
+    { id: 'doener_teller', name: 'Döner Teller', price_cents: 2400, emoji: '🍽️', options: baseOptionGroups({ includeBread: false }) },
+  ],
+  Folded: [
+    { id: 'folded_istanbul', name: 'Istanbul Folded', price_cents: 2300, emoji: '🫓' },
+    { id: 'folded_guadalajara', name: 'Guadalajara Folded', price_cents: 2300, emoji: '🫓' },
+  ],
+  Pide: [
+    { id: 'pide_doener', name: 'Pide Döner & Mozzarella', price_cents: 2400, emoji: '🫓' },
+    { id: 'pide_spinat_feta', name: 'Pide Spinat & Feta', price_cents: 2200, emoji: '🧀' },
+    { id: 'pide_champignons', name: 'Pide Champignons & Frischkäse', price_cents: 2300, emoji: '🍄' },
+    { id: 'pide_feige_ricotta_burrata_honig', name: 'Pide Feige, Ricotta, Burrata & Honig', price_cents: 2500, emoji: '🍯' },
+    { id: 'pide_sucuk_cheddar', name: 'Pide Sucuk & Cheddar', price_cents: 2400, emoji: '🧀' },
+    { id: 'pide_guacamole_rucola_feta', name: 'Pide Guacamole, Rucola & Feta', price_cents: 2400, emoji: '🥑' },
+  ],
+  Bowls: [
+    { id: 'bowl_beirut', name: 'Beirut Bowl', price_cents: 2000, emoji: '🥗' },
+    { id: 'bowl_istanbul', name: 'Istanbul Bowl', price_cents: 2000, emoji: '🥗' },
+    { id: 'bowl_guadalajara', name: 'Guadalajara Bowl', price_cents: 2000, emoji: '🥗' },
+  ],
+  Vegan: [
+    { id: 'falafel', name: 'Falafel', price_cents: 1500, emoji: '🧆' },
+    { id: 'karotte_baellchen', name: 'Karottenbällchen', price_cents: 1500, emoji: '🥕' },
+    { id: 'zucchini_baellchen', name: 'Zucchinibällchen', price_cents: 1500, emoji: '🥒' },
+  ],
+  Fingerfood: [
+    { id: 'chicken_nuggets', name: 'Chicken Nuggets', price_cents: 1500, emoji: '🍗' },
+    { id: 'pommes', name: 'Pommes', price_cents: 800, emoji: '🍟' },
+  ],
+  Getränke: [
+    { id: 'ayran', name: 'Ayran', price_cents: 500, emoji: '🥤' },
+    { id: 'bier', name: 'Bier', price_cents: 600, emoji: '🍺' },
+    { id: 'dose_033', name: 'Softdrink Dose 0.33L', price_cents: 400, emoji: '🥤' },
+    { id: 'flasche_033', name: 'Softdrink Flasche 0.33L', price_cents: 600, emoji: '🧃' },
+  ],
+};
+
 // ==========================
 // Utils
 // ==========================
 function formatPrice(cents: number) {
-  return (cents / 100).toLocaleString('de-CH', { style: 'currency', currency: 'EUR', minimumFractionDigits: 2 });
+  return (cents / 100).toLocaleString('de-CH', { style: 'currency', currency: 'CHF', minimumFractionDigits: 2 });
 }
 function sumCart(lines: OrderLine[]) { return lines.reduce((acc, l) => acc + (l.item?.price_cents ?? 0) * l.qty, 0); }
 const LS_KEY = 'order_ids_v1';
@@ -82,6 +120,7 @@ export type Tab = (typeof tabs)[number];
 
 export default function Page() {
   const [tab, setTab] = useState<Tab>('menu');
+  const [activeCategory, setActiveCategory] = useState<Category>('Döner');
 
   // Warenkorb
   const [cart, setCart] = useState<OrderLine[]>([]);
@@ -193,7 +232,7 @@ export default function Page() {
     }
   }, [cart, totalCents, customerEmail, persistIds]);
 
-  // Beim Klick auf ein Gericht sofort das Customize-Menü öffnen (statt Buttons)
+  // Beim Klick auf ein Gericht: direkt Konfigurator öffnen (Buttons entfernt)
   const openCustomize = useCallback((m: MenuItem) => {
     const initialSpecs = (m.options || []).reduce<Record<string, string[]>>((acc, g) => {
       acc[g.id] = g.type === 'single' && g.required && g.choices.length > 0 ? [g.choices[0].id] : [];
@@ -238,8 +277,23 @@ export default function Page() {
           {tab === 'menu' && (
             <section>
               <h2 className="text-lg font-semibold">Wähle dein Gericht</h2>
+
+              {/* Kategorie-Reiter */}
+              <div className="mt-3 flex flex-wrap gap-2">
+                {CATEGORY_TABS.map((c) => (
+                  <button
+                    key={c}
+                    onClick={() => setActiveCategory(c)}
+                    className={`rounded-full px-3 py-1.5 text-sm shadow ${activeCategory === c ? 'bg-emerald-600 text-white' : 'bg-white text-gray-700 hover:bg-gray-50'}`}
+                  >
+                    {c}
+                  </button>
+                ))}
+              </div>
+
+              {/* Karten der aktiven Kategorie – Karte öffnet direkt Konfigurator */}
               <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
-                {MENU.map((m) => (
+                {MENU_BY_CATEGORY[activeCategory].map((m) => (
                   <article
                     key={m.id}
                     role="button"
