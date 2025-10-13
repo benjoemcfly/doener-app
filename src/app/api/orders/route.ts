@@ -28,7 +28,6 @@ export async function GET(req: NextRequest) {
 
   let rows: Order[];
   if (archived) {
-    // Archiv: picked_up & älter als 3 Minuten
     rows = (await sql`
       SELECT id, lines, total_cents, status, created_at, updated_at
       FROM public.orders
@@ -38,7 +37,6 @@ export async function GET(req: NextRequest) {
       LIMIT 100
     `) as unknown as Order[];
   } else {
-    // Aktive: alles außer Archiv
     rows = (await sql`
       SELECT id, lines, total_cents, status, created_at, updated_at
       FROM public.orders
@@ -66,9 +64,10 @@ export async function POST(req: NextRequest) {
   const id = crypto.randomUUID();
   const status: OrderStatus = 'in_queue';
 
+  // WICHTIG: JSON selbst serialisieren und als jsonb casten
   await sql`
     INSERT INTO public.orders (id, lines, total_cents, status)
-    VALUES (${id}, ${sql.json(lines)}, ${total_cents}, ${status})
+    VALUES (${id}, ${JSON.stringify(lines)}::jsonb, ${total_cents}, ${status})
   `;
 
   return json({ id }, 201);
