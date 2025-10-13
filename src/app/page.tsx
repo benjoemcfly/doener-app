@@ -2,10 +2,42 @@
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import clsx from "clsx";
-// IMPORTANT: project alias @/* → src/*
-// Der vorhandene Hook (WebAudio + SW Vibration im aktiven Tab)
-import useReadyFeedback from "@/useReadyFeedback";
+// NOTE: entfernt: import clsx from "clsx"; (verursachte Module-not-found)
+// NOTE: entfernt: import useReadyFeedback from "@/useReadyFeedback"; (optional nicht vorhanden)
+
+// --- kleiner Helper, um classNames ohne Abhängigkeit zu kombinieren ---
+function cx(...parts: Array<string | false | null | undefined>) {
+  return parts.filter(Boolean).join(" ");
+}
+
+// --- lokaler Fallback-Hook für Ready-Feedback (Sound + Vibration) ---
+// Wenn du später die Projekt-Variante nutzen willst, kannst du die lokale
+// Implementierung ignorieren und wieder `@/useReadyFeedback` importieren.
+function useReadyFeedbackLocal() {
+  const playedRef = useRef(false);
+  return () => {
+    // WebAudio Beep (kurz)
+    try {
+      const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
+      const o = ctx.createOscillator();
+      const g = ctx.createGain();
+      o.type = "sine";
+      o.frequency.value = 880; // A5
+      o.connect(g);
+      g.connect(ctx.destination);
+      g.gain.setValueAtTime(0.0001, ctx.currentTime);
+      g.gain.exponentialRampToValueAtTime(0.2, ctx.currentTime + 0.01);
+      o.start();
+      o.stop(ctx.currentTime + 0.15);
+      o.onended = () => ctx.close();
+    } catch {}
+
+    // SW/Tab-Vibration (falls erlaubt)
+    try {
+      if (navigator?.vibrate) navigator.vibrate([180]);
+    } catch {}
+  };
+}
 
 // =========================
 // Types (mirror API payloads)
@@ -94,7 +126,7 @@ async function createOrder(payload: { lines: OrderLine[]; total_cents: number })
     },
     cache: "no-store",
     body: JSON.stringify({
-      lines: payload.lines, // Server stringifiziert intern (JSON.stringify(... )::json)
+      lines: payload.lines,
       total_cents: payload.total_cents,
     }),
   });
@@ -125,7 +157,7 @@ function StatusBadge({ status }: { status: OrderStatus }) {
       ? "Abholbereit"
       : "Abgeholt";
   return (
-    <span className={clsx("inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium", badgeColors[status])}>
+    <span className={cx("inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium", badgeColors[status])}>
       {label}
     </span>
   );
@@ -156,17 +188,16 @@ function useInterval(callback: () => void, delayMs: number) {
 function OrderStatusList() {
   const [ids, setIds] = useState<string[]>(() => readStoredIds());
   const [orders, setOrders] = useState<Record<string, Order | null>>({});
-  const alertedRef = useRef<Set<string>>(new Set()); // verhindert doppeltes Feedback
+  const alertedRef = useRef<Set<string>>(new Set());
 
-  // Sound + Vibration bei Übergang → ready (Hook aus Projekt)
-  const anyReadyFeedback: any = useReadyFeedback as any;
-  const readyFeedback = anyReadyFeedback?.() ?? (() => {});
+  // Sound + Vibration bei Übergang → ready (lokaler Fallback)
+  const readyFeedback = useReadyFeedbackLocal();
 
   const sortedIds = useMemo(() => {
     const list = [...ids];
     const active = list.filter((id) => orders[id]?.status !== "picked_up");
     const done = list.filter((id) => orders[id]?.status === "picked_up");
-    return [...active, ...done]; // picked_up am Ende, aber sichtbar
+    return [...active, ...done];
   }, [ids, orders]);
 
   const refreshOne = useCallback(async (id: string) => {
@@ -174,7 +205,7 @@ function OrderStatusList() {
     setOrders((cur) => ({ ...cur, [id]: next }));
 
     if (next && next.status === "ready" && !alertedRef.current.has(id)) {
-      try { readyFeedback?.(); } catch {}
+      try { readyFeedback(); } catch {}
       alertedRef.current.add(id);
     }
   }, [readyFeedback]);
@@ -218,7 +249,7 @@ function OrderStatusList() {
       {sortedIds.map((id) => {
         const o = orders[id];
         return (
-          <div key={id} className={clsx("rounded-2xl border p-3 sm:p-4 shadow-sm", o?.status === "picked_up" && "opacity-70")}> 
+          <div key={id} className={cx("rounded-2xl border p-3 sm:p-4 shadow-sm", o?.status === "picked_up" && "opacity-70")}> 
             <div className="flex items-center justify-between gap-2">
               <div className="text-xs font-mono text-slate-500">#{id}</div>
               {o?.status && <StatusBadge status={o.status} />}
@@ -229,11 +260,11 @@ function OrderStatusList() {
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div className="text-slate-800">
                     {o.lines.map((l, i) => (
-                  <span key={i}>
-                    {l.qty}× {l.name}
-                    {i < o.lines.length - 1 ? ", " : ""}
-                  </span>
-                ))}
+                      <span key={i}>
+                        {l.qty}× {l.name}
+                        {i < o.lines.length - 1 ? ", " : ""}
+                      </span>
+                    ))}
                   </div>
                   <div className="font-semibold">
                     Summe: <Money cents={o.total_cents} />
@@ -328,7 +359,7 @@ export default function Page() {
 
   const handleSubmit = useCallback(async (payload: { lines: OrderLine[]; total_cents: number }) => {
     const id = await createOrder(payload);
-    addStoredId(id); // **entscheidend**: alte Bestellungen bleiben erhalten
+    addStoredId(id); // alte Bestellungen bleiben erhalten
     setActiveTab("status");
   }, []);
 
@@ -339,7 +370,7 @@ export default function Page() {
         <nav className="flex gap-2">
           <button
             onClick={() => setActiveTab("order")}
-            className={clsx(
+            className={cx(
               "rounded-full px-3 py-1 text-sm",
               activeTab === "order" ? "bg-slate-900 text-white" : "bg-slate-100 text-slate-700"
             )}
@@ -348,7 +379,7 @@ export default function Page() {
           </button>
           <button
             onClick={() => setActiveTab("status")}
-            className={clsx(
+            className={cx(
               "rounded-full px-3 py-1 text-sm",
               activeTab === "status" ? "bg-slate-900 text-white" : "bg-slate-100 text-slate-700"
             )}
