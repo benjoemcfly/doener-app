@@ -15,12 +15,15 @@ export default function KitchenPage() {
   const [orders, setOrders] = useState<Order[]>([]);
   const [pendingIds, setPendingIds] = useState<Record<string, boolean>>({});
   const [mutating, setMutating] = useState(false);
+  const [pinError, setPinError] = useState(false);
 
   const pin = useMemo(() => decodeURIComponent(getCookie('kpin') || ''), []);
 
   const load = useCallback(async () => {
     try {
       const r = await fetch('/api/orders', { cache: 'no-store', headers: { 'x-kitchen-pin': pin } });
+      if (r.status === 403) { setPinError(true); setOrders([]); return; }
+      setPinError(false);
       if (!r.ok) return;
       const list = (await r.json()) as Order[];
       setOrders(list);
@@ -58,9 +61,15 @@ export default function KitchenPage() {
           </div>
         </header>
 
+        {pinError && (
+          <div className="mt-4 rounded-xl border border-amber-300 bg-amber-50 p-3 text-sm text-amber-800">
+            PIN ungültig oder geändert. <Link className="underline" href="/kitchen/login">Neu einloggen</Link>.
+          </div>
+        )}
+
         <main className="mt-6">
           <div className="grid grid-cols-1 gap-3">
-            {orders.length === 0 && (<div className="rounded-2xl border bg-white p-4 text-sm text-gray-500">Keine Bestellungen.</div>)}
+            {orders.length === 0 && !pinError && (<div className="rounded-2xl border bg-white p-4 text-sm text-gray-500">Keine Bestellungen.</div>)}
             {orders.map((o) => (
               <div key={o.id} className="rounded-2xl border bg-white p-4">
                 <div className="flex items-center justify-between">
@@ -70,9 +79,7 @@ export default function KitchenPage() {
                 <div className="mt-2 divide-y text-sm">
                   {o.lines.map((l, i) => (
                     <div key={l.id ?? `${l.item?.id ?? 'item'}-${i}`} className="flex items-start justify-between py-2">
-                      <div>
-                        {l.qty}× {l.item?.name || 'Position'}
-                      </div>
+                      <div>{l.qty}× {l.item?.name || 'Position'}</div>
                       <div className="text-gray-500">{formatPrice((l.item?.price_cents ?? 0) * l.qty)}</div>
                     </div>
                   ))}

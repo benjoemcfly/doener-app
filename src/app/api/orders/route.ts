@@ -4,7 +4,7 @@ import { sql } from '@/lib/db';
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
 
-// Typen konsistent zur Client-App
+// Typen
 export type OrderStatus = 'in_queue' | 'preparing' | 'ready' | 'picked_up';
 export type MenuItem = { id: string; name: string; price_cents: number };
 export type OrderLine = { id: string; item?: MenuItem | null; qty: number; specs?: Record<string, string[]>; note?: string };
@@ -64,10 +64,10 @@ export async function POST(req: NextRequest) {
   const id = crypto.randomUUID();
   const status: OrderStatus = 'in_queue';
 
-  // WICHTIG: JSON selbst serialisieren und als jsonb casten
+  // JSON sicher als Text parametrisiern und auf ::json casten (kompatibel mit json UND jsonb Spalten)
   await sql`
     INSERT INTO public.orders (id, lines, total_cents, status)
-    VALUES (${id}, ${JSON.stringify(lines)}::jsonb, ${total_cents}, ${status})
+    VALUES (${id}, ${JSON.stringify(lines)}::json, ${total_cents}, ${status})
   `;
 
   return json({ id }, 201);
