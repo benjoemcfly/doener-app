@@ -39,8 +39,8 @@ function useReadyFeedbackLocal() {
     // SW/Tab-Vibration (falls erlaubt)
     try {
       if (typeof navigator !== "undefined" && "vibrate" in navigator) {
-        // @ts-expect-error: vibrate existiert im Browser
-        navigator.vibrate([180]);
+        const vib = (navigator as Navigator & { vibrate?: (pattern: number | number[]) => boolean }).vibrate;
+        if (typeof vib === "function") vib([180]);
       }
     } catch {
       // ignore
