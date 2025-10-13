@@ -136,6 +136,11 @@ export default function Page() {
   const [orderIds, setOrderIds] = useState<string[]>([]); // neueste zuerst
   const [ordersById, setOrdersById] = useState<Record<string, Order | null>>({});
 
+  // Ready-UI: Banner + Flash
+  const [showReadyBanner, setShowReadyBanner] = useState(false);
+  const [flashOn, setFlashOn] = useState(false);
+  const allReadyRef = useRef(false);
+
   // Benachrichtigung pro Order einmalig
   const notifiedRef = useRef<Record<string, boolean>>({});
   const { soundEnabled, enableSound, trigger } = useReadyFeedback();
@@ -170,14 +175,16 @@ export default function Page() {
 
     let stopped = false;
     const fetchAll = async () => {
+      const updated: Record<string, Order | null> = {};
       for (const id of orderIds) {
         try {
           const r = await fetch(`/api/orders/${id}`, { cache: 'no-store' });
           if (!r.ok) continue;
           const o = (await r.json()) as Order;
           if (stopped) return;
-          setOrdersById((prev) => ({ ...prev, [id]: o }));
+          updated[id] = o;
 
+          // Einzel-Benachrichtigung
           if (o.status === 'ready' && !notifiedRef.current[id]) {
             notifiedRef.current[id] = true;
             trigger();
@@ -185,6 +192,24 @@ export default function Page() {
           }
         } catch {}
       }
+
+      setOrdersById((prev) => {
+        const merged = { ...prev, ...updated };
+        const allKnown = orderIds.length > 0 && orderIds.every((id) => merged[id]?.status === 'ready');
+        // Wechsel: nicht vorher allReady -> jetzt allReady
+        if (allKnown && !allReadyRef.current) {
+          allReadyRef.current = true;
+          setShowReadyBanner(true);
+          setFlashOn(true);
+          // Flash automatisch zurückfahren
+          setTimeout(() => setFlashOn(false), 1500);
+        }
+        // Falls eine neue Bestellung reinkommt / Status zurück fällt
+        if (!allKnown) {
+          allReadyRef.current = false;
+        }
+        return merged;
+      });
     };
 
     // sofort initial
@@ -217,6 +242,10 @@ export default function Page() {
       const { id } = (await r.json()) as { id: string };
       setCart([]);
       setTab('status');
+      // Neue Bestellung -> Ready-Banner zurücksetzen
+      setShowReadyBanner(false);
+      allReadyRef.current = false;
+      setFlashOn(false);
       // vorne einfügen (neueste oben)
       setOrderIds((prev) => {
         const next = [id, ...prev.filter((x) => x !== id)];
@@ -246,6 +275,24 @@ export default function Page() {
   // ==========================
   return (
     <div className="min-h-dvh bg-gradient-to-b from-emerald-50 via-white to-white text-gray-800">
+      {/* Flash-Overlay (Option A) */}
+      {flashOn && <GreenFlash />}
+
+      {/* Sticky Ready-Banner (Option E) */}
+      {showReadyBanner && (
+        <div className="fixed left-1/2 top-3 z-50 -translate-x-1/2">
+          <div className="flex items-center gap-3 rounded-full bg-emerald-600 px-4 py-2 text-white shadow-lg ring-1 ring-emerald-700/40">
+            <span>🥙 Deine Bestellung ist abholbereit</span>
+            <button
+              onClick={() => setShowReadyBanner(false)}
+              className="rounded-full bg-white/15 px-2 py-1 text-sm hover:bg-white/25"
+            >
+              Schließen
+            </button>
+          </div>
+        </div>
+      )}
+
       <div className="mx-auto max-w-3xl p-4">
         {/* Header */}
         <header className="flex items-center justify-between rounded-2xl border bg-white/70 px-4 py-3 shadow-sm backdrop-blur">
@@ -439,6 +486,20 @@ export default function Page() {
         </Dialog>
       )}
     </div>
+  );
+}
+
+// ========= Zusatz-Komponente: sanftes grünes Aufleuchten =========
+function GreenFlash() {
+  const [off, setOff] = useState(false);
+  useEffect(() => {
+    const t = setTimeout(() => setOff(true), 50); // start transition
+    return () => clearTimeout(t);
+  }, []);
+  return (
+    <div
+      className={`pointer-events-none fixed inset-0 z-40 bg-emerald-200/60 transition-opacity duration-1000 ${off ? 'opacity-0' : 'opacity-100'}`}
+    />
   );
 }
 
