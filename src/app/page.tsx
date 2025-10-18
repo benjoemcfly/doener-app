@@ -111,6 +111,8 @@ function formatPrice(cents: number) {
 }
 function sumCart(lines: OrderLine[]) { return lines.reduce((acc, l) => acc + (l.item?.price_cents ?? 0) * l.qty, 0); }
 const LS_KEY = 'order_ids_v1';
+const ARCHIVE_LS_KEY = 'order_archive_v1';
+const todayStr = () => new Date().toISOString().slice(0, 10);
 
 // ==========================
 // Tabs (nur Kunden-Ansicht)
@@ -132,9 +134,14 @@ export default function Page() {
 
   const [customerEmail, setCustomerEmail] = useState('');
 
-  // 🔁 Mehrere Bestellungen: IDs & Map mit Daten
+  // 🔁 Mehrere Bestellungen: IDs & Map mit Daten (aktiv)
   const [orderIds, setOrderIds] = useState<string[]>([]); // neueste zuerst
   const [ordersById, setOrdersById] = useState<Record<string, Order | null>>({});
+
+  // 🗃️ Archiv (nur lokaler Client; Tages-Reset)
+  const [archiveIds, setArchiveIds] = useState<string[]>([]);
+  const [archiveById, setArchiveById] = useState<Record<string, Order>>({});
+  const [showArchive, setShowArchive] = useState(false);
 
   // Ready-UI: Banner + Flash
   const [showReadyBanner, setShowReadyBanner] = useState(false);
@@ -158,17 +165,33 @@ export default function Page() {
   useEffect(() => {
     try {
       const raw = localStorage.getItem(LS_KEY);
-      if (!raw) return;
-      const ids = JSON.parse(raw) as string[];
-      if (Array.isArray(ids) && ids.length) {
-        setOrderIds(ids);
+      if (raw) {
+        const ids = JSON.parse(raw) as string[];
+        if (Array.isArray(ids) && ids.length) setOrderIds(ids);
       }
     } catch {}
   }, []);
 
-  // Helper: Order-IDs in localStorage speichern
+  // Archiv aus localStorage laden (aber nur für HEUTE)
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(ARCHIVE_LS_KEY);
+      if (!raw) return;
+      const obj = JSON.parse(raw) as { date: string; ids: string[]; byId: Record<string, Order> };
+      if (obj?.date === todayStr()) {
+        setArchiveIds(obj.ids || []);
+        setArchiveById(obj.byId || {});
+      } else {
+        localStorage.removeItem(ARCHIVE_LS_KEY); // Tageswechsel -> leeren
+      }
+    } catch {}
+  }, []);
+
   const persistIds = useCallback((ids: string[]) => {
     try { localStorage.setItem(LS_KEY, JSON.stringify(ids)); } catch {}
+  }, []);
+  const persistArchive = useCallback((ids: string[], byId: Record<string, Order>) => {
+    try { localStorage.setItem(ARCHIVE_LS_KEY, JSON.stringify({ date: todayStr(), ids, byId })); } catch {}
   }, []);
 
   // Polling aller bekannten Orders (alle 5s)
@@ -202,8 +225,42 @@ export default function Page() {
 
       setOrdersById((prev) => {
         const merged = { ...prev, ...updated };
+
+        // -> Prüfen, ob Bestellungen ins Archiv sollen (picked_up seit >= 3 Min)
+        const now = Date.now();
+        const toArchive: string[] = [];
+        for (const id of orderIds) {
+          const o = merged[id];
+          if (!o || o.status !== 'picked_up') continue;
+          const t = new Date(o.updated_at || o.created_at || '').getTime();
+          if (!Number.isFinite(t)) continue;
+          if (now - t >= 3 * 60 * 1000) toArchive.push(id);
+        }
+
+        if (toArchive.length) {
+          // aus aktiv entfernen
+          setOrderIds((prevIds) => {
+            const next = prevIds.filter((id) => !toArchive.includes(id));
+            persistIds(next);
+            return next;
+          });
+          // ins Archiv übernehmen (neueste nach vorne)
+          setArchiveById((prevArch) => {
+            const add: Record<string, Order> = {};
+            for (const id of toArchive) add[id] = merged[id]!;
+            const nextById = { ...prevArch, ...add };
+            setArchiveIds((prevA) => {
+              const nextIds = [...toArchive.filter((id) => !prevA.includes(id)), ...prevA];
+              persistArchive(nextIds, nextById);
+              return nextIds;
+            });
+            return nextById;
+          });
+          // Benachrichtigungs-Flags brauchen wir nicht mehr für Archivierte
+        }
+
+        // All-Ready Check (nur auf Basis der AKTIVEN orderIds)
         const allKnown = orderIds.length > 0 && orderIds.every((id) => merged[id]?.status === 'ready');
-        // Wechsel: nicht vorher allReady -> jetzt allReady
         if (allKnown && !allReadyRef.current) {
           allReadyRef.current = true;
           setBannerText('Alle Bestellungen sind abholbereit');
@@ -212,10 +269,10 @@ export default function Page() {
           setFlashOn(true);
           setTimeout(() => setFlashOn(false), 3000);
         }
-        // Falls eine neue Bestellung reinkommt / Status zurück fällt
         if (!allKnown) {
           allReadyRef.current = false;
         }
+
         return merged;
       });
     };
@@ -224,7 +281,7 @@ export default function Page() {
     fetchAll();
     const t = setInterval(fetchAll, 5000);
     return () => { stopped = true; clearInterval(t); };
-  }, [orderIds, trigger]);
+  }, [orderIds, trigger, persistIds, persistArchive]);
 
   // Cart helpers
   const addToCart = useCallback((mi: MenuItem, specs?: Record<string, string[]>) => {
@@ -250,8 +307,9 @@ export default function Page() {
       const { id } = (await r.json()) as { id: string };
       setCart([]);
       setTab('status');
-      // Neue Bestellung -> Ready-Banner/Flash zurücksetzen
+      // Neue Bestellung -> Ready-Banner/Flash zurücksetzen, Archiv-Ansicht schließen
       setShowReadyBanner(false);
+      setShowArchive(false);
       allReadyRef.current = false;
       setFlashOn(false);
       // vorne einfügen (neueste oben)
@@ -435,7 +493,7 @@ export default function Page() {
             <section>
               <h2 className="text-lg font-semibold">Bestellstatus</h2>
               {orderIds.length === 0 ? (
-                <p className="mt-3 text-sm text-gray-500">Noch keine Bestellung gesendet.</p>
+                <p className="mt-3 text-sm text-gray-500">Keine aktiven Bestellungen.</p>
               ) : (
                 <div className="mt-3 space-y-3">
                   {orderIds.map((id) => {
@@ -475,6 +533,50 @@ export default function Page() {
                       </div>
                     );
                   })}
+                </div>
+              )}
+
+              {/* Archiv-Link (klein, dezent) */}
+              <div className="mt-3 text-center text-xs text-gray-500">
+                <button
+                  className="rounded-full px-3 py-1 underline-offset-2 hover:underline"
+                  onClick={() => setShowArchive((v) => !v)}
+                >
+                  {showArchive ? 'Archiv ausblenden' : `Vergangene Bestellungen ansehen (${archiveIds.length})`}
+                </button>
+              </div>
+
+              {/* Archivliste (optional sichtbar) */}
+              {showArchive && (
+                <div className="mt-4 space-y-3">
+                  <h3 className="text-sm font-medium text-gray-600">Archiv (heute)</h3>
+                  {archiveIds.length === 0 ? (
+                    <p className="text-sm text-gray-400">Noch keine archivierten Bestellungen.</p>
+                  ) : (
+                    archiveIds.map((id) => {
+                      const o = archiveById[id];
+                      if (!o) return null;
+                      return (
+                        <div key={id} className="rounded-2xl border bg-white p-4 opacity-90">
+                          <div className="flex items-center justify-between">
+                            <div className="text-sm text-gray-600">ID: <span className="font-mono">{id}</span></div>
+                            <span className="rounded-full bg-gray-100 px-2.5 py-1 text-xs text-gray-700">Archiv</span>
+                          </div>
+                          <ul className="mt-3 divide-y text-sm">
+                            {o.lines.map((l) => (
+                              <li key={l.id} className="flex items-start justify-between py-2">
+                                <div>
+                                  {l.qty}× {l.item?.name}
+                                </div>
+                                <div className="text-gray-500">{formatPrice((l.item?.price_cents ?? 0) * l.qty)}</div>
+                              </li>
+                            ))}
+                          </ul>
+                          <div className="mt-2 text-right text-xs text-gray-400">abgeschlossen: {new Date(o.updated_at || o.created_at || '').toLocaleString()}</div>
+                        </div>
+                      );
+                    })
+                  )}
                 </div>
               )}
             </section>
