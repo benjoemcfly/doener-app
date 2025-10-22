@@ -1,80 +1,102 @@
-import { NextResponse } from 'next/server';
-// NOTE: Adjust this import if your db client lives elsewhere
-import { db } from '@/lib/db';
+import { NextRequest, NextResponse } from 'next/server'
+import { sql } from '@/lib/db'
 
-// Helper to validate kitchen PIN from header against env
-function assertKitchenPin(req: Request) {
-  const want = process.env.KITCHEN_PIN?.trim();
-  const have = req.headers.get('x-kitchen-pin')?.trim();
-  if (!want || !have || want !== have) {
-    return false;
-  }
-  return true;
+export const dynamic = 'force-dynamic'
+export const revalidate = 0
+
+// Typen
+export type OrderStatus = 'in_queue' | 'preparing' | 'ready' | 'picked_up'
+export type MenuItem = { id: string; name: string; price_cents: number }
+export type OrderLine = { id: string; item?: MenuItem | null; qty: number; specs?: Record<string, string[]>; note?: string }
+export type Order = { id: string; lines: OrderLine[]; total_cents: number; status: OrderStatus; created_at?: string; updated_at?: string }
+
+// Helper: JSON Response
+function json(data: unknown, status = 200) {
+  return new NextResponse(JSON.stringify(data), {
+    status,
+    headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' },
+  })
 }
 
-// GET /api/orders
-// Used by Kitchen dashboard and Kitchen archive
-export async function GET(req: Request) {
-  // Kitchen endpoints require PIN
-  if (!assertKitchenPin(req)) {
-    return new NextResponse('Forbidden', { status: 403 });
+// 🔹 Helper: Telefonnummer leicht normalisieren (E.164 CH)
+function normalizeE164(input?: unknown, defaultCountry = '+41'): string | null {
+  if (typeof input !== 'string') return null
+  let s = input.trim()
+  if (!s) return null
+  s = s.replace(/[\s()\-\.–]/g, '')
+  if (!s.startsWith('+')) {
+    if (/^0\d{8,}$/.test(s)) s = defaultCountry + s.replace(/^0+/, '')
   }
-
-  const { searchParams } = new URL(req.url);
-  const archived = searchParams.get('archived');
-
-  try {
-    if (archived === '1') {
-      // Archiv: Bestellungen, die bereits abgeholt wurden und seit >= 3 Minuten abgeschlossen sind
-      const { rows } = await db.query(
-        `SELECT id, lines, total_cents, status, created_at, updated_at
-         FROM orders
-         WHERE status = 'picked_up' AND updated_at <= NOW() - INTERVAL '3 minutes'
-         ORDER BY updated_at DESC`
-      );
-      return NextResponse.json(rows);
-    }
-
-    // Aktive Bestellungen für das Kitchen-Dashboard
-    const { rows } = await db.query(
-      `SELECT id, lines, total_cents, status, created_at, updated_at
-       FROM orders
-       WHERE status IN ('in_queue','preparing','ready')
-       ORDER BY created_at DESC`
-    );
-    return NextResponse.json(rows);
-  } catch (e) {
-    console.error('GET /api/orders failed', e);
-    return new NextResponse('Internal Error', { status: 500 });
-  }
+  const digits = s.replace(/[^0-9]/g, '')
+  if (digits.length < 7 || digits.length > 15) return null
+  if (!s.startsWith('+')) return null
+  return s
 }
 
-// POST /api/orders
-// Customer creates a new order
-export async function POST(req: Request) {
-  try {
-    const body = await req.json();
-    const { lines, total_cents, customer_email, customer_phone } = body as {
-      lines: unknown[];
-      total_cents: number;
-      customer_email?: string;
-      customer_phone?: string; // NEW
-    };
-
-    if (!Array.isArray(lines) || !Number.isFinite(total_cents)) {
-      return new NextResponse('Bad Request', { status: 400 });
-    }
-
-    const { rows } = await db.query(
-      `INSERT INTO orders (lines, total_cents, status, customer_email, customer_phone)
-       VALUES ($1, $2, 'in_queue', $3, $4)
-       RETURNING id`,
-      [JSON.stringify(lines), total_cents, customer_email ?? null, customer_phone ?? null]
-    );
-
-    return NextResponse.json({ id: rows[0].id });
-  } catch (e) {
-    console.error('POST /api/orders failed', e);
-    return new NextResponse('Internal Error', { status: 500 });
+// =====================
+// GET: nur für Kitchen – mit PIN-Header (archived=1 für Archiv)
+// =====================
+export async function GET(req: NextRequest) {
+  const pin = req.headers.get('x-kitchen-pin')
+  if (!process.env.KITCHEN_PIN || pin !== process.env.KITCHEN_PIN) {
+    return json({ error: 'forbidden' }, 403)
   }
+
+  const archived = req.nextUrl.searchParams.get('archived') === '1'
+
+  let rows: Order[]
+  if (archived) {
+    rows = (await sql`
+      SELECT id, lines, total_cents, status, created_at, updated_at
+      FROM public.orders
+      WHERE status = 'picked_up'
+        AND COALESCE(updated_at, created_at) < now() - interval '3 minutes'
+      ORDER BY created_at DESC
+      LIMIT 100
+    `) as unknown as Order[]
+  } else {
+    rows = (await sql`
+      SELECT id, lines, total_cents, status, created_at, updated_at
+      FROM public.orders
+      WHERE NOT (
+        status = 'picked_up'
+        AND COALESCE(updated_at, created_at) < now() - interval '3 minutes'
+      )
+      ORDER BY created_at DESC
+      LIMIT 100
+    `) as unknown as Order[]
+  }
+
+  return json(rows, 200)
+}
+
+// =====================
+// POST: neue Order (öffentlicher Endpunkt)
+// =====================
+export async function POST(req: NextRequest) {
+  const body = await req.json().catch(() => ({}))
+  const lines = (body?.lines ?? []) as OrderLine[]
+  const total_cents = Number(body?.total_cents ?? 0) | 0
+  const customer_email = typeof body?.customer_email === 'string' && body.customer_email.trim()
+    ? body.customer_email.trim()
+    : null
+
+  // 🔹 NEU: Telefonnummer optional, wenn vorhanden → normalisieren & prüfen
+  const rawPhone = typeof body?.customer_phone === 'string' ? body.customer_phone : ''
+  const customer_phone = rawPhone ? normalizeE164(rawPhone) : null
+
+  if (!Array.isArray(lines) || !lines.length) return json({ error: 'lines required' }, 400)
+  if (!Number.isFinite(total_cents) || total_cents <= 0) return json({ error: 'invalid total_cents' }, 400)
+  if (rawPhone && !customer_phone) return json({ error: 'invalid customer_phone format' }, 400)
+
+  const id = crypto.randomUUID()
+  const status: OrderStatus = 'in_queue'
+
+  // JSON sicher als Text parametrisiern und auf ::json casten (kompatibel mit json UND jsonb Spalten)
+  await sql`
+    INSERT INTO public.orders (id, lines, total_cents, status, customer_email, customer_phone)
+    VALUES (${id}, ${JSON.stringify(lines)}::json, ${total_cents}, ${status}, ${customer_email}, ${customer_phone})
+  `
+
+  return json({ id }, 201)
 }
