@@ -132,7 +132,9 @@ export default function Page() {
   // Customize-Modal
   const [customizing, setCustomizing] = useState<{ item: MenuItem; specs: Record<string, string[]> } | null>(null);
 
+  // ✅ NEU: Telefon statt (oder zusätzlich zu) E-Mail
   const [customerEmail, setCustomerEmail] = useState('');
+  const [customerPhone, setCustomerPhone] = useState('');
 
   // 🔁 Mehrere Bestellungen: IDs & Map mit Daten (aktiv)
   const [orderIds, setOrderIds] = useState<string[]>([]); // neueste zuerst
@@ -301,7 +303,10 @@ export default function Page() {
   // Bestellung erstellen → neue ID **vorne** einfügen, IDs persistieren, Status-Tab zeigen
   const createOrder = useCallback(async () => {
     if (!cart.length) return;
-    const payload = { lines: cart, total_cents: totalCents, customer_email: customerEmail || undefined };
+    const payload: any = { lines: cart, total_cents: totalCents };
+    if (customerEmail) payload.customer_email = customerEmail;
+    if (customerPhone) payload.customer_phone = customerPhone; // ✅ NEU
+
     const r = await fetch('/api/orders', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload), cache: 'no-store' });
     if (r.ok) {
       const { id } = (await r.json()) as { id: string };
@@ -322,10 +327,12 @@ export default function Page() {
       setOrdersById((prev) => ({ ...prev, [id]: null }));
       // Benachrichtigungs-Flag zurücksetzen
       notifiedRef.current[id] = false;
+      // Felder leeren (optional)
+      setCustomerPhone('');
     } else {
       alert('Fehler beim Absenden');
     }
-  }, [cart, totalCents, customerEmail, persistIds]);
+  }, [cart, totalCents, customerEmail, customerPhone, persistIds]);
 
   // Beim Klick auf ein Gericht: direkt Konfigurator öffnen (Buttons entfernt)
   const openCustomize = useCallback((m: MenuItem) => {
@@ -376,7 +383,7 @@ export default function Page() {
 
         {/* Tabs */}
         <nav className="mt-4 flex gap-2">
-          {tabs.map((key) => (
+          {(['menu','checkout','status'] as const).map((key) => (
             <button key={key} onClick={() => setTab(key)} className={`rounded-full px-4 py-2 text-sm shadow transition ${tab === key ? 'bg-emerald-600 text-white' : 'bg-white text-gray-700 hover:bg-gray-50'}`}>
               {key === 'menu' && 'Menü'}
               {key === 'checkout' && 'Kasse'}
@@ -478,11 +485,18 @@ export default function Page() {
                     <div className="text-base font-semibold">{formatPrice(totalCents)}</div>
                   </div>
 
-                  <div className="rounded-2xl border bg-white p-3">
+                  <div className="rounded-2xl border bg-white p-3 space-y-3">
+                    {/* Optional weiter E-Mail-Feld */}
                     <label className="block text-sm">E-Mail (optional)
                       <input className="mt-1 w-full rounded-xl border px-3 py-2 text-sm" placeholder="kunde@example.com" value={customerEmail} onChange={(e) => setCustomerEmail(e.target.value)} inputMode="email" />
                     </label>
-                    <button className="mt-3 w-full rounded-xl bg-emerald-600 px-4 py-2 text-white shadow hover:bg-emerald-700" onClick={createOrder} disabled={lines.length === 0}>Bestellung abschicken</button>
+
+                    {/* ✅ NEU: Telefon (für SMS) */}
+                    <label className="block text-sm">Telefon (für SMS – optional)
+                      <input className="mt-1 w-full rounded-xl border px-3 py-2 text-sm" placeholder="+41 79 123 45 67" value={customerPhone} onChange={(e) => setCustomerPhone(e.target.value)} inputMode="tel" />
+                    </label>
+
+                    <button className="w-full rounded-xl bg-emerald-600 px-4 py-2 text-white shadow hover:bg-emerald-700" onClick={createOrder} disabled={lines.length === 0}>Bestellung abschicken</button>
                   </div>
                 </div>
               )}
