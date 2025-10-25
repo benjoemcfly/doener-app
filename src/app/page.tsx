@@ -300,39 +300,67 @@ export default function Page() {
   const removeLine = useCallback((id: string) => setCart((prev) => prev.filter((l) => l.id !== id)), []);
   const totalCents = useMemo(() => sumCart(lines), [lines]);
 
-  // Bestellung erstellen → neue ID **vorne** einfügen, IDs persistieren, Status-Tab zeigen
-  const createOrder = useCallback(async () => {
-    if (!cart.length) return;
-    const payload: any = { lines: cart, total_cents: totalCents };
-    if (customerEmail) payload.customer_email = customerEmail;
-    if (customerPhone) payload.customer_phone = customerPhone; // ✅ NEU
+// Bestellung erstellen → neue ID **vorne** einfügen, IDs persistieren, Status-Tab zeigen
+const createOrder = useCallback(async () => {
+  if (!cart.length) return;
 
-    const r = await fetch('/api/orders', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload), cache: 'no-store' });
-    if (r.ok) {
-      const { id } = (await r.json()) as { id: string };
-      setCart([]);
-      setTab('status');
-      // Neue Bestellung -> Ready-Banner/Flash zurücksetzen, Archiv-Ansicht schließen
-      setShowReadyBanner(false);
-      setShowArchive(false);
-      allReadyRef.current = false;
-      setFlashOn(false);
-      // vorne einfügen (neueste oben)
-      setOrderIds((prev) => {
-        const next = [id, ...prev.filter((x) => x !== id)];
-        persistIds(next);
-        return next;
-      });
-      // optional Platzhalter, bis Poll kommt
-      setOrdersById((prev) => ({ ...prev, [id]: null }));
-      // Benachrichtigungs-Flag zurücksetzen
-      notifiedRef.current[id] = false;
-      // Felder leeren (optional)
-      setCustomerPhone('');
-    } else {
-      alert('Fehler beim Absenden');
-    }
-  }, [cart, totalCents, customerEmail, customerPhone, persistIds]);
+  // payload TYPISCH, kein "any"
+  const payload: {
+    lines: OrderLine[];
+    total_cents: number;
+    customer_email?: string;
+    customer_phone?: string;
+  } = {
+    lines: cart,
+    total_cents: totalCents,
+  };
+
+  if (customerEmail) {
+    payload.customer_email = customerEmail;
+  }
+  if (customerPhone) {
+    payload.customer_phone = customerPhone; // ✅ NEU
+  }
+
+  const r = await fetch('/api/orders', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+    cache: 'no-store',
+  });
+
+  if (r.ok) {
+    const { id } = (await r.json()) as { id: string };
+
+    setCart([]);
+    setTab('status');
+
+    // Neue Bestellung -> Ready-Banner/Flash zurücksetzen, Archiv-Ansicht schließen
+    setShowReadyBanner(false);
+    setShowArchive(false);
+    allReadyRef.current = false;
+    setFlashOn(false);
+
+    // vorne einfügen (neueste oben)
+    setOrderIds((prev) => {
+      const next = [id, ...prev.filter((x) => x !== id)];
+      persistIds(next);
+      return next;
+    });
+
+    // optional Platzhalter, bis Poll kommt
+    setOrdersById((prev) => ({ ...prev, [id]: null }));
+
+    // Benachrichtigungs-Flag zurücksetzen
+    notifiedRef.current[id] = false;
+
+    // Felder leeren (optional)
+    setCustomerPhone('');
+  } else {
+    alert('Fehler beim Absenden');
+  }
+}, [cart, totalCents, customerEmail, customerPhone, persistIds]);
+
 
   // Beim Klick auf ein Gericht: direkt Konfigurator öffnen (Buttons entfernt)
   const openCustomize = useCallback((m: MenuItem) => {
