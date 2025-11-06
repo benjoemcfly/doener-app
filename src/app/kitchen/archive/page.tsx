@@ -4,7 +4,14 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 
 export type OrderStatus = 'in_queue' | 'preparing' | 'ready' | 'picked_up';
-export type MenuItem = { id: string; name: string; price_cents: number };
+
+// ⬇️ Neu: Option-Typen für Label-Rendering
+type Choice = { id: string; label: string };
+type OptionGroup = { id: string; label: string; type: 'single' | 'multi'; choices: Choice[] };
+
+// ⬇️ MenuItem minimal erweitert (options? bleibt rückwärtskompatibel)
+export type MenuItem = { id: string; name: string; price_cents: number; options?: OptionGroup[] };
+
 export type OrderLine = { id: string; item?: MenuItem | null; qty: number; specs?: Record<string, string[]>; note?: string };
 export type Order = { id: string; lines: OrderLine[]; total_cents: number; status: OrderStatus; created_at?: string; updated_at?: string };
 
@@ -18,6 +25,45 @@ function getCookie(name: string) {
   } catch {
     return undefined;
   }
+}
+
+// ⬇️ Neu: Spezifikations-/Notiz-Renderer (identischer Stil wie im Dashboard)
+function LineSpecs({ line }: { line: OrderLine }) {
+  const item = line.item ?? undefined;
+  const specs = line.specs ?? {};
+
+  // Lookups aus item.options; fallen auf IDs zurück, wenn Labels fehlen
+  const groupById = new Map<string, OptionGroup>();
+  const choiceById = new Map<string, Choice>();
+  (item?.options ?? []).forEach((g) => {
+    groupById.set(g.id, g);
+    g.choices.forEach((c) => choiceById.set(c.id, c));
+  });
+
+  const entries = Object.entries(specs).filter(([, ids]) => Array.isArray(ids) && ids.length > 0);
+  if (entries.length === 0 && !line.note) return null;
+
+  return (
+    <div className="mt-1 space-y-1 text-[13px] leading-5">
+      {entries.map(([groupId, ids]) => (
+        <div key={groupId} className="flex flex-wrap gap-1">
+          <span className="font-medium text-gray-700 mr-1">{groupById.get(groupId)?.label ?? groupId}:</span>
+          {ids.map((cid) => (
+            <span key={cid} className="rounded-full bg-emerald-50 px-2 py-0.5 text-xs text-emerald-800 ring-1 ring-emerald-200">
+              {choiceById.get(cid)?.label ?? cid}
+            </span>
+          ))}
+        </div>
+      ))}
+
+      {line.note ? (
+        <div className="flex flex-wrap gap-1">
+          <span className="font-medium text-amber-700">Notiz:</span>
+          <span className="text-amber-700">{line.note}</span>
+        </div>
+      ) : null}
+    </div>
+  );
 }
 
 export default function KitchenArchivePage() {
@@ -77,14 +123,21 @@ export default function KitchenArchivePage() {
                 </div>
                 <div className="mt-2 divide-y text-sm">
                   {o.lines.map((l, i) => (
-                    <div key={l.id ?? `${l.item?.id ?? 'item'}-${i}`} className="flex items-start justify-between py-2">
-                      <div>{l.qty}× {l.item?.name || 'Position'}</div>
-                      <div className="text-gray-500">{formatPrice((l.item?.price_cents ?? 0) * l.qty)}</div>
+                    <div key={l.id ?? `${l.item?.id ?? 'item'}-${i}`} className="py-2">
+                      <div className="flex items-start justify-between">
+                        <div className="font-medium">{l.qty}× {l.item?.name || 'Position'}</div>
+                        <div className="text-gray-500">{formatPrice((l.item?.price_cents ?? 0) * l.qty)}</div>
+                      </div>
+                      {/* ⬇️ NEU: Spezifikationen + Notiz */}
+                      <LineSpecs line={l} />
                     </div>
                   ))}
                 </div>
                 <div className="mt-2 text-right text-xs text-gray-500">
-                  aktualisiert: {new Date(o.updated_at || o.created_at || '').toLocaleString()}
+                  aktualisiert: {(() => {
+                    const d = o.updated_at || o.created_at || '';
+                    try { return new Date(d).toLocaleString(); } catch { return d || '–'; }
+                  })()}
                 </div>
               </div>
             ))}

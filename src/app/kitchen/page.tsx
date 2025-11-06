@@ -3,13 +3,71 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 
+// ==========================
+// Typen (minimal erweitert)
+// ==========================
 export type OrderStatus = 'in_queue' | 'preparing' | 'ready' | 'picked_up';
-export type MenuItem = { id: string; name: string; price_cents: number };
+
+// Neu für Specs-Labels
+type Choice = { id: string; label: string };
+type OptionGroup = { id: string; label: string; type: 'single' | 'multi'; choices: Choice[] };
+
+// Bestehendes MenuItem um options? ergänzt (rückwärtskompatibel)
+export type MenuItem = { id: string; name: string; price_cents: number; options?: OptionGroup[] };
+
 export type OrderLine = { id: string; item?: MenuItem | null; qty: number; specs?: Record<string, string[]>; note?: string };
 export type Order = { id: string; lines: OrderLine[]; total_cents: number; status: OrderStatus; created_at?: string; updated_at?: string };
 
-function formatPrice(cents: number) { return (cents / 100).toLocaleString('de-CH', { style: 'currency', currency: 'EUR', minimumFractionDigits: 2 }); }
-function getCookie(name: string) { try { return document.cookie.split('; ').find((x) => x.startsWith(name + '='))?.split('=')[1]; } catch { return undefined; } }
+function formatPrice(cents: number) {
+  return (cents / 100).toLocaleString('de-CH', { style: 'currency', currency: 'EUR', minimumFractionDigits: 2 });
+}
+function getCookie(name: string) {
+  try { return document.cookie.split('; ').find((x) => x.startsWith(name + '='))?.split('=')[1]; } catch { return undefined; }
+}
+
+// =====================================
+// NEU: Mini-Komponente für Spezifikationen
+// =====================================
+function LineSpecs({ line }: { line: OrderLine }) {
+  const item = line.item ?? undefined;
+  const specs = line.specs ?? {};
+
+  // Label-Lookups aus item.options; Fallbacks auf IDs
+  const groupById = new Map<string, OptionGroup>();
+  const choiceById = new Map<string, Choice>();
+  (item?.options ?? []).forEach((g) => {
+    groupById.set(g.id, g);
+    g.choices.forEach((c) => choiceById.set(c.id, c));
+  });
+
+  const entries = Object.entries(specs).filter(([, ids]) => Array.isArray(ids) && ids.length > 0);
+  if (entries.length === 0 && !line.note) return null;
+
+  return (
+    <div className="mt-1 space-y-1 text-[13px] leading-5">
+      {entries.map(([groupId, ids]) => {
+        const groupLabel = groupById.get(groupId)?.label ?? groupId;
+        return (
+          <div key={groupId} className="flex flex-wrap gap-1">
+            <span className="font-medium text-gray-700 mr-1">{groupLabel}:</span>
+            {ids.map((cid) => (
+              <span key={cid} className="rounded-full bg-emerald-50 px-2 py-0.5 text-xs text-emerald-800 ring-1 ring-emerald-200">
+                {choiceById.get(cid)?.label ?? cid}
+              </span>
+            ))}
+          </div>
+        );
+      })}
+
+      {line.note ? (
+        <div className="flex flex-wrap gap-1">
+          <span className="font-medium text-amber-700">Notiz:</span>
+          <span className="text-amber-700">{line.note}</span>
+        </div>
+      ) : null}
+    </div>
+  );
+}
 
 export default function KitchenPage() {
   const [orders, setOrders] = useState<Order[]>([]);
@@ -78,9 +136,13 @@ export default function KitchenPage() {
                 </div>
                 <div className="mt-2 divide-y text-sm">
                   {o.lines.map((l, i) => (
-                    <div key={l.id ?? `${l.item?.id ?? 'item'}-${i}`} className="flex items-start justify-between py-2">
-                      <div>{l.qty}× {l.item?.name || 'Position'}</div>
-                      <div className="text-gray-500">{formatPrice((l.item?.price_cents ?? 0) * l.qty)}</div>
+                    <div key={l.id ?? `${l.item?.id ?? 'item'}-${i}`} className="py-2">
+                      <div className="flex items-start justify-between">
+                        <div className="font-medium">{l.qty}× {l.item?.name || 'Position'}</div>
+                        <div className="text-gray-500">{formatPrice((l.item?.price_cents ?? 0) * l.qty)}</div>
+                      </div>
+                      {/* Spezifikationen + Notiz */}
+                      <LineSpecs line={l} />
                     </div>
                   ))}
                 </div>
