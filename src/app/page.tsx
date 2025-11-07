@@ -300,67 +300,66 @@ export default function Page() {
   const removeLine = useCallback((id: string) => setCart((prev) => prev.filter((l) => l.id !== id)), []);
   const totalCents = useMemo(() => sumCart(lines), [lines]);
 
-// Bestellung erstellen → neue ID **vorne** einfügen, IDs persistieren, Status-Tab zeigen
-const createOrder = useCallback(async () => {
-  if (!cart.length) return;
+  // Bestellung erstellen → neue ID **vorne** einfügen, IDs persistieren, Status-Tab zeigen
+  const createOrder = useCallback(async () => {
+    if (!cart.length) return;
 
-  // payload TYPISCH, kein "any"
-  const payload: {
-    lines: OrderLine[];
-    total_cents: number;
-    customer_email?: string;
-    customer_phone?: string;
-  } = {
-    lines: cart,
-    total_cents: totalCents,
-  };
+    // payload TYPISCH, kein "any"
+    const payload: {
+      lines: OrderLine[];
+      total_cents: number;
+      customer_email?: string;
+      customer_phone?: string;
+    } = {
+      lines: cart,
+      total_cents: totalCents,
+    };
 
-  if (customerEmail) {
-    payload.customer_email = customerEmail;
-  }
-  if (customerPhone) {
-    payload.customer_phone = customerPhone; // ✅ NEU
-  }
+    if (customerEmail) {
+      payload.customer_email = customerEmail;
+    }
+    if (customerPhone) {
+      payload.customer_phone = customerPhone; // ✅ NEU
+    }
 
-  const r = await fetch('/api/orders', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload),
-    cache: 'no-store',
-  });
-
-  if (r.ok) {
-    const { id } = (await r.json()) as { id: string };
-
-    setCart([]);
-    setTab('status');
-
-    // Neue Bestellung -> Ready-Banner/Flash zurücksetzen, Archiv-Ansicht schließen
-    setShowReadyBanner(false);
-    setShowArchive(false);
-    allReadyRef.current = false;
-    setFlashOn(false);
-
-    // vorne einfügen (neueste oben)
-    setOrderIds((prev) => {
-      const next = [id, ...prev.filter((x) => x !== id)];
-      persistIds(next);
-      return next;
+    const r = await fetch('/api/orders', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+      cache: 'no-store',
     });
 
-    // optional Platzhalter, bis Poll kommt
-    setOrdersById((prev) => ({ ...prev, [id]: null }));
+    if (r.ok) {
+      const { id } = (await r.json()) as { id: string };
 
-    // Benachrichtigungs-Flag zurücksetzen
-    notifiedRef.current[id] = false;
+      setCart([]);
+      setTab('status');
 
-    // Felder leeren (optional)
-    setCustomerPhone('');
-  } else {
-    alert('Fehler beim Absenden');
-  }
-}, [cart, totalCents, customerEmail, customerPhone, persistIds]);
+      // Neue Bestellung -> Ready-Banner/Flash zurücksetzen, Archiv-Ansicht schließen
+      setShowReadyBanner(false);
+      setShowArchive(false);
+      allReadyRef.current = false;
+      setFlashOn(false);
 
+      // vorne einfügen (neueste oben)
+      setOrderIds((prev) => {
+        const next = [id, ...prev.filter((x) => x !== id)];
+        persistIds(next);
+        return next;
+      });
+
+      // optional Platzhalter, bis Poll kommt
+      setOrdersById((prev) => ({ ...prev, [id]: null }));
+
+      // Benachrichtigungs-Flag zurücksetzen
+      notifiedRef.current[id] = false;
+
+      // Felder leeren (optional)
+      setCustomerPhone('');
+    } else {
+      alert('Fehler beim Absenden');
+    }
+  }, [cart, totalCents, customerEmail, customerPhone, persistIds]);
 
   // Beim Klick auf ein Gericht: direkt Konfigurator öffnen (Buttons entfernt)
   const openCustomize = useCallback((m: MenuItem) => {
@@ -374,8 +373,10 @@ const createOrder = useCallback(async () => {
   // ==========================
   // UI
   // ==========================
+  const itemCount = useMemo(() => lines.reduce((a, l) => a + l.qty, 0), [lines]);
+
   return (
-    <div className="min-h-dvh bg-gradient-to-b from-emerald-50 via-white to-white text-gray-800">
+    <div className="min-h-dvh bg-white text-gray-900">
       {/* Flash-Overlay */}
       {flashOn && <GreenFlash durationMs={flashMs} />}
 
@@ -386,7 +387,7 @@ const createOrder = useCallback(async () => {
             <span>🥙 {bannerText || 'Deine Bestellung ist abholbereit'}</span>
             <button
               onClick={() => setShowReadyBanner(false)}
-              className="rounded-full px-2 py-1 text-sm bg-white bg-opacity-20 hover:bg-opacity-30 transition"
+              className="rounded-full bg-white/20 px-2 py-1 text-sm transition hover:bg-white/30"
             >
               Schließen
             </button>
@@ -394,23 +395,34 @@ const createOrder = useCallback(async () => {
         </div>
       )}
 
-      <div className="mx-auto max-w-3xl p-4">
-        {/* Header */}
-        <header className="flex items-center justify-between rounded-2xl border bg-white/70 px-4 py-3 shadow-sm backdrop-blur">
-          <div className="flex items-center gap-3">
-            <div className="grid h-10 w-10 place-items-center rounded-xl bg-emerald-600 text-white shadow">🥙</div>
-            <div>
-              <h1 className="text-xl font-semibold leading-tight">Döner Self-Ordering</h1>
-              <p className="text-xs text-gray-500">MVP • Menü → Kasse → Status</p>
+      {/* Top AppBar */}
+      <header className="sticky top-0 z-40 border-b bg-white/90 backdrop-blur">
+        <div className="mx-auto max-w-3xl px-4">
+          <div className="flex h-14 items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="grid h-9 w-9 place-items-center rounded-xl bg-emerald-600 text-white shadow">🥙</div>
+              <div className="leading-tight">
+                <div className="text-sm font-semibold">Döner Self‑Ordering</div>
+                <div className="text-[11px] text-gray-500">Jetzt • 10–20 Min</div>
+              </div>
+            </div>
+            <button onClick={enableSound} className={`rounded-full px-3 py-1.5 text-xs shadow ${soundEnabled ? 'bg-emerald-100 text-emerald-700' : 'bg-emerald-600 text-white'}`}>
+              {soundEnabled ? '🔔 Ton aktiv' : '🔔 Ton aktivieren'}
+            </button>
+          </div>
+          {/* pseudo-Suche */}
+          <div className="pb-3">
+            <div className="flex items-center gap-2 rounded-2xl border bg-gray-50 px-3 py-2 text-sm text-gray-500">
+              <span>🔎</span>
+              <input placeholder="Gericht suchen…" className="w-full bg-transparent outline-none" onChange={() => {}} />
             </div>
           </div>
-          <button onClick={enableSound} className={`rounded-full px-3 py-1.5 text-sm shadow ${soundEnabled ? 'bg-emerald-100 text-emerald-700' : 'bg-emerald-600 text-white'}`}>
-            {soundEnabled ? '🔔 Ton aktiv' : '🔔 Ton aktivieren'}
-          </button>
-        </header>
+        </div>
+      </header>
 
-        {/* Tabs */}
-        <nav className="mt-4 flex gap-2">
+      <div className="mx-auto max-w-3xl px-4">
+        {/* Tabs (Desktop sichtbar), Mobile via BottomNav */}
+        <nav className="mt-3 hidden gap-2 sm:flex">
           {(['menu','checkout','status'] as const).map((key) => (
             <button key={key} onClick={() => setTab(key)} className={`rounded-full px-4 py-2 text-sm shadow transition ${tab === key ? 'bg-emerald-600 text-white' : 'bg-white text-gray-700 hover:bg-gray-50'}`}>
               {key === 'menu' && 'Menü'}
@@ -421,10 +433,10 @@ const createOrder = useCallback(async () => {
         </nav>
 
         {/* Inhalte */}
-        <main className="mt-6">
+        <main className="py-4">
           {tab === 'menu' && (
-            <section>
-              <h2 className="text-lg font-semibold">Wähle dein Gericht</h2>
+            <section className="pb-28">
+              <h2 className="text-lg font-semibold">Beliebt & Kategorien</h2>
 
               {/* Kategorie-Reiter */}
               <div className="mt-3 flex flex-wrap gap-2">
@@ -439,23 +451,35 @@ const createOrder = useCallback(async () => {
                 ))}
               </div>
 
-              {/* Karten der aktiven Kategorie – Karte öffnet direkt Konfigurator */}
+              {/* Karten der aktiven Kategorie */}
               <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
                 {MENU_BY_CATEGORY[activeCategory].map((m) => (
                   <article
                     key={m.id}
-                    role="button"
-                    tabIndex={0}
-                    onClick={() => openCustomize(m)}
-                    onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && openCustomize(m)}
-                    className="group cursor-pointer rounded-2xl border bg-white p-4 shadow-sm transition hover:shadow-md focus:outline-none focus:ring-2 focus:ring-emerald-400"
+                    className="group overflow-hidden rounded-2xl border bg-white shadow-sm transition hover:shadow-md"
                   >
-                    <div className="flex items-start justify-between">
-                      <div>
+                    {/* Hero-Zeile */}
+                    <div className="relative flex items-start justify-between gap-3 p-4">
+                      <div className="pr-10">
                         <div className="text-2xl">{m.emoji ?? '🥙'}</div>
-                        <h3 className="mt-1 text-base font-semibold">{m.name}</h3>
+                        <h3 className="mt-1 text-base font-semibold leading-tight">{m.name}</h3>
                         <div className="text-sm text-gray-500">{formatPrice(m.price_cents)}</div>
-                        <div className="mt-2 text-xs text-emerald-700">Tippe um zu konfigurieren</div>
+                        <button
+                          className="mt-3 rounded-xl bg-black px-3 py-2 text-sm font-medium text-white hover:bg-gray-900"
+                          onClick={() => addToCart(m)}
+                        >
+                          Schnell hinzufügen
+                        </button>
+                        <button
+                          className="ml-2 mt-3 rounded-xl bg-white px-3 py-2 text-sm font-medium text-emerald-700 ring-1 ring-emerald-600/30 hover:bg-emerald-50"
+                          onClick={() => openCustomize(m)}
+                        >
+                          Anpassen
+                        </button>
+                      </div>
+                      {/* Preis-Tag */}
+                      <div className="absolute right-4 top-4 rounded-full bg-white/90 px-2 py-1 text-xs font-semibold shadow">
+                        {formatPrice(m.price_cents)}
                       </div>
                     </div>
                   </article>
@@ -476,14 +500,14 @@ const createOrder = useCallback(async () => {
           )}
 
           {tab === 'checkout' && (
-            <section>
+            <section className="pb-28">
               <h2 className="text-lg font-semibold">Warenkorb</h2>
               {lines.length === 0 ? (
                 <p className="mt-3 text-sm text-gray-500">Dein Warenkorb ist leer.</p>
               ) : (
                 <div className="mt-3 space-y-3">
                   {lines.map((l) => (
-                    <div key={l.id} className="rounded-2xl border bg-white p-3">
+                    <div key={l.id} className="rounded-2xl border bg-white p-3 shadow-sm">
                       <div className="flex items-start justify-between gap-3">
                         <div>
                           <div className="font-medium">{l.item?.name}</div>
@@ -513,7 +537,7 @@ const createOrder = useCallback(async () => {
                     <div className="text-base font-semibold">{formatPrice(totalCents)}</div>
                   </div>
 
-                  <div className="rounded-2xl border bg-white p-3 space-y-3">
+                  <div className="space-y-3 rounded-2xl border bg-white p-3">
                     {/* Optional weiter E-Mail-Feld */}
                     <label className="block text-sm">E-Mail (optional)
                       <input className="mt-1 w-full rounded-xl border px-3 py-2 text-sm" placeholder="kunde@example.com" value={customerEmail} onChange={(e) => setCustomerEmail(e.target.value)} inputMode="email" />
@@ -532,7 +556,7 @@ const createOrder = useCallback(async () => {
           )}
 
           {tab === 'status' && (
-            <section>
+            <section className="pb-28">
               <h2 className="text-lg font-semibold">Bestellstatus</h2>
               {orderIds.length === 0 ? (
                 <p className="mt-3 text-sm text-gray-500">Keine aktiven Bestellungen.</p>
@@ -541,7 +565,7 @@ const createOrder = useCallback(async () => {
                   {orderIds.map((id) => {
                     const o = ordersById[id];
                     return (
-                      <div key={id} className="rounded-2xl border bg-white p-4">
+                      <div key={id} className="rounded-2xl border bg-white p-4 shadow-sm">
                         <div className="flex items-center justify-between">
                           <div className="text-sm text-gray-600">ID: <span className="font-mono">{id}</span></div>
                           <StatusBadge s={o?.status ?? 'in_queue'} />
@@ -625,6 +649,43 @@ const createOrder = useCallback(async () => {
           )}
         </main>
       </div>
+
+      {/* Sticky Bottom Cart-Bar wie bei Uber Eats (nur im Menü) */}
+      <div className="pointer-events-none fixed inset-x-0 bottom-16 z-40 mx-auto max-w-3xl px-4 sm:bottom-20">
+        {itemCount > 0 && tab === 'menu' && (
+          <div className="pointer-events-auto flex items-center justify-between gap-3 rounded-full bg-black px-4 py-3 text-white shadow-lg">
+            <div className="flex items-center gap-2">
+              <span className="grid h-7 w-7 place-items-center rounded-full bg-white/10 text-sm">{itemCount}</span>
+              <span className="text-sm">Warenkorb</span>
+            </div>
+            <button className="rounded-full bg-white px-3 py-1.5 text-sm font-semibold text-black" onClick={() => setTab('checkout')}>
+              {formatPrice(totalCents)} · Ansehen
+            </button>
+          </div>
+        )}
+      </div>
+
+      {/* Bottom Navigation (App-Feeling) */}
+      <nav className="fixed inset-x-0 bottom-0 z-50 border-t bg-white/90 backdrop-blur">
+        <div className="mx-auto grid max-w-3xl grid-cols-3">
+          {(
+            [
+              { key: 'menu', label: 'Menü', icon: '🍴' },
+              { key: 'checkout', label: 'Kasse', icon: '🧾' },
+              { key: 'status', label: 'Status', icon: '⏱️' },
+            ] as const
+          ).map((t) => (
+            <button
+              key={t.key}
+              onClick={() => setTab(t.key as Tab)}
+              className={`flex h-14 flex-col items-center justify-center text-xs ${tab === t.key ? 'font-semibold text-emerald-700' : 'text-gray-600'}`}
+            >
+              <span className="text-lg">{t.icon}</span>
+              {t.label}
+            </button>
+          ))}
+        </div>
+      </nav>
 
       {/* Modal: Customize */}
       {customizing && (
