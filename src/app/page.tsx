@@ -132,15 +132,15 @@ export default function Page() {
   // Customize-Modal
   const [customizing, setCustomizing] = useState<{ item: MenuItem; specs: Record<string, string[]> } | null>(null);
 
-  // ✅ NEU: Telefon statt (oder zusätzlich zu) E-Mail
+  // Kontaktfelder
   const [customerEmail, setCustomerEmail] = useState('');
   const [customerPhone, setCustomerPhone] = useState('');
 
-  // 🔁 Mehrere Bestellungen: IDs & Map mit Daten (aktiv)
+  // Mehrere Bestellungen: IDs & Map mit Daten (aktiv)
   const [orderIds, setOrderIds] = useState<string[]>([]); // neueste zuerst
   const [ordersById, setOrdersById] = useState<Record<string, Order | null>>({});
 
-  // 🗃️ Archiv (nur lokaler Client; Tages-Reset)
+  // Archiv (nur lokaler Client; Tages-Reset)
   const [archiveIds, setArchiveIds] = useState<string[]>([]);
   const [archiveById, setArchiveById] = useState<Record<string, Order>>({});
   const [showArchive, setShowArchive] = useState(false);
@@ -211,7 +211,6 @@ export default function Page() {
           if (stopped) return;
           updated[id] = o;
 
-          // Einzel-Benachrichtigung (Sound + Vibration + Banner + kurzer Flash)
           if (o.status === 'ready' && !notifiedRef.current[id]) {
             notifiedRef.current[id] = true;
             trigger();
@@ -228,7 +227,6 @@ export default function Page() {
       setOrdersById((prev) => {
         const merged = { ...prev, ...updated };
 
-        // -> Prüfen, ob Bestellungen ins Archiv sollen (picked_up seit >= 3 Min)
         const now = Date.now();
         const toArchive: string[] = [];
         for (const id of orderIds) {
@@ -240,13 +238,11 @@ export default function Page() {
         }
 
         if (toArchive.length) {
-          // aus aktiv entfernen
           setOrderIds((prevIds) => {
             const next = prevIds.filter((id) => !toArchive.includes(id));
             persistIds(next);
             return next;
           });
-          // ins Archiv übernehmen (neueste nach vorne)
           setArchiveById((prevArch) => {
             const add: Record<string, Order> = {};
             for (const id of toArchive) add[id] = merged[id]!;
@@ -258,16 +254,14 @@ export default function Page() {
             });
             return nextById;
           });
-          // Benachrichtigungs-Flags brauchen wir nicht mehr für Archivierte
         }
 
-        // All-Ready Check (nur auf Basis der AKTIVEN orderIds)
         const allKnown = orderIds.length > 0 && orderIds.every((id) => merged[id]?.status === 'ready');
         if (allKnown && !allReadyRef.current) {
           allReadyRef.current = true;
           setBannerText('Alle Bestellungen sind abholbereit');
           setShowReadyBanner(true);
-          setFlashMs(3000); // doppelt so lang wie Einzel-Flash
+          setFlashMs(3000);
           setFlashOn(true);
           setTimeout(() => setFlashOn(false), 3000);
         }
@@ -279,7 +273,6 @@ export default function Page() {
       });
     };
 
-    // sofort initial
     fetchAll();
     const t = setInterval(fetchAll, 5000);
     return () => { stopped = true; clearInterval(t); };
@@ -289,7 +282,6 @@ export default function Page() {
   const addToCart = useCallback((mi: MenuItem, specs?: Record<string, string[]>) => {
     setCart((prev) => {
       const next = [...prev, { id: crypto.randomUUID(), item: mi, qty: 1, specs: specs ?? {}, note: '' }];
-      // Nach dem Hinzufügen zum Mini-Warenkorb scrollen
       queueMicrotask(() => miniCartRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }));
       return next;
     });
@@ -300,27 +292,18 @@ export default function Page() {
   const removeLine = useCallback((id: string) => setCart((prev) => prev.filter((l) => l.id !== id)), []);
   const totalCents = useMemo(() => sumCart(lines), [lines]);
 
-  // Bestellung erstellen → neue ID **vorne** einfügen, IDs persistieren, Status-Tab zeigen
+  // Bestellung erstellen
   const createOrder = useCallback(async () => {
     if (!cart.length) return;
 
-    // payload TYPISCH, kein "any"
     const payload: {
       lines: OrderLine[];
       total_cents: number;
       customer_email?: string;
       customer_phone?: string;
-    } = {
-      lines: cart,
-      total_cents: totalCents,
-    };
-
-    if (customerEmail) {
-      payload.customer_email = customerEmail;
-    }
-    if (customerPhone) {
-      payload.customer_phone = customerPhone; // ✅ NEU
-    }
+    } = { lines: cart, total_cents: totalCents };
+    if (customerEmail) payload.customer_email = customerEmail;
+    if (customerPhone) payload.customer_phone = customerPhone;
 
     const r = await fetch('/api/orders', {
       method: 'POST',
@@ -331,37 +314,26 @@ export default function Page() {
 
     if (r.ok) {
       const { id } = (await r.json()) as { id: string };
-
       setCart([]);
       setTab('status');
-
-      // Neue Bestellung -> Ready-Banner/Flash zurücksetzen, Archiv-Ansicht schließen
       setShowReadyBanner(false);
       setShowArchive(false);
       allReadyRef.current = false;
       setFlashOn(false);
-
-      // vorne einfügen (neueste oben)
       setOrderIds((prev) => {
         const next = [id, ...prev.filter((x) => x !== id)];
         persistIds(next);
         return next;
       });
-
-      // optional Platzhalter, bis Poll kommt
       setOrdersById((prev) => ({ ...prev, [id]: null }));
-
-      // Benachrichtigungs-Flag zurücksetzen
       notifiedRef.current[id] = false;
-
-      // Felder leeren (optional)
       setCustomerPhone('');
     } else {
       alert('Fehler beim Absenden');
     }
   }, [cart, totalCents, customerEmail, customerPhone, persistIds]);
 
-  // Beim Klick auf ein Gericht: direkt Konfigurator öffnen (Buttons entfernt)
+  // Beim Klick auf ein Gericht: direkt Konfigurator öffnen
   const openCustomize = useCallback((m: MenuItem) => {
     const initialSpecs = (m.options || []).reduce<Record<string, string[]>>((acc, g) => {
       acc[g.id] = g.type === 'single' && g.required && g.choices.length > 0 ? [g.choices[0].id] : [];
@@ -371,48 +343,36 @@ export default function Page() {
   }, []);
 
   // ==========================
-  // UI
+  // UI (Uber‑ähnlicher, hochwertiger Look)
   // ==========================
   const itemCount = useMemo(() => lines.reduce((a, l) => a + l.qty, 0), [lines]);
 
   return (
-    <div className="min-h-dvh bg-white text-gray-900">
+    <div className="min-h-dvh bg-neutral-50 text-neutral-900 antialiased [font-feature-settings:'ss01'_'cv03']">
       {/* Flash-Overlay */}
       {flashOn && <GreenFlash durationMs={flashMs} />}
 
-      {/* Sticky Ready-Banner */}
-      {showReadyBanner && (
-        <div className="fixed left-1/2 top-3 z-50 -translate-x-1/2">
-          <div className="flex items-center gap-3 rounded-full bg-emerald-600 px-4 py-2 text-white shadow-lg ring-1 ring-emerald-700/40">
-            <span>🥙 {bannerText || 'Deine Bestellung ist abholbereit'}</span>
-            <button
-              onClick={() => setShowReadyBanner(false)}
-              className="rounded-full bg-white/20 px-2 py-1 text-sm transition hover:bg-white/30"
-            >
-              Schließen
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* Top AppBar */}
-      <header className="sticky top-0 z-40 border-b bg-white/90 backdrop-blur">
-        <div className="mx-auto max-w-3xl px-4">
-          <div className="flex h-14 items-center justify-between">
+      {/* Top Bar */}
+      <header className="sticky top-0 z-40 border-b border-neutral-200/80 bg-white/90 backdrop-blur-xl">
+        <div className="mx-auto max-w-5xl px-4">
+          <div className="flex h-16 items-center justify-between">
             <div className="flex items-center gap-3">
-              <div className="grid h-9 w-9 place-items-center rounded-xl bg-emerald-600 text-white shadow">🥙</div>
+              <div className="grid h-9 w-9 place-items-center rounded-xl bg-emerald-600 text-white shadow-sm ring-1 ring-emerald-700/20">🥙</div>
               <div className="leading-tight">
-                <div className="text-sm font-semibold">Döner Self‑Ordering</div>
-                <div className="text-[11px] text-gray-500">Jetzt • 10–20 Min</div>
+                <div className="text-[15px] font-semibold tracking-[-0.015em]">Döner Self‑Ordering</div>
+                <div className="text-[11px] text-neutral-500">Jetzt • 10–20 Min</div>
               </div>
             </div>
-            <button onClick={enableSound} className={`rounded-full px-3 py-1.5 text-xs shadow ${soundEnabled ? 'bg-emerald-100 text-emerald-700' : 'bg-emerald-600 text-white'}`}>
-              {soundEnabled ? '🔔 Ton aktiv' : '🔔 Ton aktivieren'}
-            </button>
+            <div className="flex items-center gap-2">
+              <button onClick={enableSound} className={`rounded-full px-3 py-2 text-xs shadow-sm ring-1 ${soundEnabled ? 'bg-emerald-50 text-emerald-700 ring-emerald-600/20' : 'bg-black text-white ring-black/10'}`}>
+                {soundEnabled ? '🔔 Ton aktiv' : '🔔 Ton aktivieren'}
+              </button>
+            </div>
           </div>
-          {/* pseudo-Suche */}
+
+          {/* Suchfeld */}
           <div className="pb-3">
-            <div className="flex items-center gap-2 rounded-2xl border bg-gray-50 px-3 py-2 text-sm text-gray-500">
+            <div className="flex items-center gap-2 rounded-full border border-neutral-200 bg-neutral-50 px-4 py-2 text-[13px] text-neutral-500 shadow-sm">
               <span>🔎</span>
               <input placeholder="Gericht suchen…" className="w-full bg-transparent outline-none" onChange={() => {}} />
             </div>
@@ -420,11 +380,11 @@ export default function Page() {
         </div>
       </header>
 
-      <div className="mx-auto max-w-3xl px-4">
-        {/* Tabs (Desktop sichtbar), Mobile via BottomNav */}
-        <nav className="mt-3 hidden gap-2 sm:flex">
+      <main className="mx-auto max-w-5xl px-4">
+        {/* Sekundär-Navigation (Desktop) */}
+        <nav className="mt-4 hidden items-center gap-2 sm:flex">
           {(['menu','checkout','status'] as const).map((key) => (
-            <button key={key} onClick={() => setTab(key)} className={`rounded-full px-4 py-2 text-sm shadow transition ${tab === key ? 'bg-emerald-600 text-white' : 'bg-white text-gray-700 hover:bg-gray-50'}`}>
+            <button key={key} onClick={() => setTab(key)} className={`rounded-full px-4 py-2 text-[13px] shadow-sm ring-1 transition ${tab === key ? 'bg-black text-white ring-black/10' : 'bg-white text-neutral-800 ring-neutral-200 hover:bg-neutral-50'}`}>
               {key === 'menu' && 'Menü'}
               {key === 'checkout' && 'Kasse'}
               {key === 'status' && 'Status'}
@@ -432,242 +392,233 @@ export default function Page() {
           ))}
         </nav>
 
-        {/* Inhalte */}
-        <main className="py-4">
-          {tab === 'menu' && (
-            <section className="pb-28">
-              <h2 className="text-lg font-semibold">Beliebt & Kategorien</h2>
+        {/* Headline */}
+        <h2 className="mt-6 text-[22px] font-semibold tracking-[-0.02em] text-neutral-900">Wähle dein Gericht</h2>
 
-              {/* Kategorie-Reiter */}
-              <div className="mt-3 flex flex-wrap gap-2">
-                {CATEGORY_TABS.map((c) => (
-                  <button
-                    key={c}
-                    onClick={() => setActiveCategory(c)}
-                    className={`rounded-full px-3 py-1.5 text-sm shadow ${activeCategory === c ? 'bg-emerald-600 text-white' : 'bg-white text-gray-700 hover:bg-gray-50'}`}
-                  >
-                    {c}
-                  </button>
-                ))}
-              </div>
+        {/* Kategorie-Pills (scrollbar) */}
+        <div className="mt-3 flex snap-x gap-2 overflow-x-auto pb-1 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
+          {CATEGORY_TABS.map((c) => (
+            <button
+              key={c}
+              onClick={() => setActiveCategory(c)}
+              className={`snap-start rounded-full px-3.5 py-1.5 text-[13px] shadow-sm ring-1 ${activeCategory === c ? 'bg-neutral-900 text-white ring-neutral-900/10' : 'bg-white text-neutral-800 ring-neutral-200 hover:bg-neutral-50'}`}
+            >
+              {c}
+            </button>
+          ))}
+        </div>
 
-              {/* Karten der aktiven Kategorie */}
-              <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
-                {MENU_BY_CATEGORY[activeCategory].map((m) => (
-                  <article
-                    key={m.id}
-                    className="group overflow-hidden rounded-2xl border bg-white shadow-sm transition hover:shadow-md"
-                  >
-                    {/* Hero-Zeile */}
-                    <div className="relative flex items-start justify-between gap-3 p-4">
-                      <div className="pr-10">
-                        <div className="text-2xl">{m.emoji ?? '🥙'}</div>
-                        <h3 className="mt-1 text-base font-semibold leading-tight">{m.name}</h3>
-                        <div className="text-sm text-gray-500">{formatPrice(m.price_cents)}</div>
-                        <button
-                          className="mt-3 rounded-xl bg-black px-3 py-2 text-sm font-medium text-white hover:bg-gray-900"
-                          onClick={() => addToCart(m)}
-                        >
-                          Schnell hinzufügen
-                        </button>
-                        <button
-                          className="ml-2 mt-3 rounded-xl bg-white px-3 py-2 text-sm font-medium text-emerald-700 ring-1 ring-emerald-600/30 hover:bg-emerald-50"
-                          onClick={() => openCustomize(m)}
-                        >
-                          Anpassen
-                        </button>
-                      </div>
-                      {/* Preis-Tag */}
-                      <div className="absolute right-4 top-4 rounded-full bg-white/90 px-2 py-1 text-xs font-semibold shadow">
-                        {formatPrice(m.price_cents)}
-                      </div>
+        {/* Produktliste im Uber‑Stil */}
+        <section className="pb-28">
+          <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
+            {MENU_BY_CATEGORY[activeCategory].map((m) => (
+              <article key={m.id} className="group rounded-3xl bg-white shadow-sm ring-1 ring-black/5 transition hover:shadow-md">
+                <div className="grid grid-cols-[1fr_140px] items-center gap-4 p-4">
+                  {/* Textspalte */}
+                  <div>
+                    <h3 className="text-[15px] font-semibold leading-tight tracking-[-0.015em] text-neutral-900">{m.name}</h3>
+                    <div className="mt-1 text-[13px] text-neutral-500">{formatPrice(m.price_cents)}</div>
+                    <div className="mt-2 text-[12px] text-emerald-700">Tippe um zu konfigurieren</div>
+
+                    <div className="mt-3 flex items-center gap-2">
+                      <button className="rounded-full bg-black px-3 py-2 text-[13px] font-medium text-white shadow-sm" onClick={() => addToCart(m)}>Schnell hinzufügen</button>
+                      <button className="rounded-full bg-white px-3 py-2 text-[13px] font-medium text-emerald-700 ring-1 ring-emerald-600/30 hover:bg-emerald-50" onClick={() => openCustomize(m)}>Anpassen</button>
                     </div>
-                  </article>
-                ))}
-              </div>
-
-              {/* Mini-Warenkorb direkt unterhalb */}
-              <div ref={miniCartRef} className="mt-6">
-                <MiniCart
-                  lines={lines}
-                  totalCents={totalCents}
-                  onAdjustQty={adjustQty}
-                  onRemoveLine={removeLine}
-                  onGoCheckout={() => setTab('checkout')}
-                />
-              </div>
-            </section>
-          )}
-
-          {tab === 'checkout' && (
-            <section className="pb-28">
-              <h2 className="text-lg font-semibold">Warenkorb</h2>
-              {lines.length === 0 ? (
-                <p className="mt-3 text-sm text-gray-500">Dein Warenkorb ist leer.</p>
-              ) : (
-                <div className="mt-3 space-y-3">
-                  {lines.map((l) => (
-                    <div key={l.id} className="rounded-2xl border bg-white p-3 shadow-sm">
-                      <div className="flex items-start justify-between gap-3">
-                        <div>
-                          <div className="font-medium">{l.item?.name}</div>
-                          {l.specs && Object.keys(l.specs).length > 0 && (
-                            <ul className="mt-1 text-xs text-gray-600">
-                              {Object.entries(l.specs).map(([gid, arr]) => (
-                                <li key={gid}><span className="font-medium">{labelForGroup(gid, l.item)}:</span> {arr.map((cid) => labelForChoice(gid, cid, l.item)).join(', ')}</li>
-                              ))}
-                            </ul>
-                          )}
-                        </div>
-                        <div className="text-sm text-gray-500">{formatPrice((l.item?.price_cents ?? 0) * l.qty)}</div>
-                      </div>
-                      <div className="mt-2 flex items-center justify-between">
-                        <div className="flex items-center gap-2">
-                          <button className="rounded-full bg-gray-100 px-2 py-1" onClick={() => adjustQty(l.id, -1)}>-</button>
-                          <span className="min-w-6 text-center">{l.qty}</span>
-                          <button className="rounded-full bg-gray-100 px-2 py-1" onClick={() => adjustQty(l.id, +1)}>+</button>
-                        </div>
-                        <button className="text-sm text-red-600" onClick={() => removeLine(l.id)}>Entfernen</button>
-                      </div>
-                    </div>
-                  ))}
-
-                  <div className="flex items-center justify-between rounded-2xl border bg-white p-3">
-                    <div className="text-sm">Zwischensumme</div>
-                    <div className="text-base font-semibold">{formatPrice(totalCents)}</div>
                   </div>
 
-                  <div className="space-y-3 rounded-2xl border bg-white p-3">
-                    {/* Optional weiter E-Mail-Feld */}
-                    <label className="block text-sm">E-Mail (optional)
-                      <input className="mt-1 w-full rounded-xl border px-3 py-2 text-sm" placeholder="kunde@example.com" value={customerEmail} onChange={(e) => setCustomerEmail(e.target.value)} inputMode="email" />
-                    </label>
-
-                    {/* ✅ NEU: Telefon (für SMS) */}
-                    <label className="block text-sm">Telefon (für SMS – optional)
-                      <input className="mt-1 w-full rounded-xl border px-3 py-2 text-sm" placeholder="+41 79 123 45 67" value={customerPhone} onChange={(e) => setCustomerPhone(e.target.value)} inputMode="tel" />
-                    </label>
-
-                    <button className="w-full rounded-xl bg-emerald-600 px-4 py-2 text-white shadow hover:bg-emerald-700" onClick={createOrder} disabled={lines.length === 0}>Bestellung abschicken</button>
+                  {/* Bild/Emoji-Spalte mit + Button unten rechts */}
+                  <div className="relative h-28 w-full select-none">
+                    <div className="absolute inset-0 rounded-2xl bg-neutral-100/80 ring-1 ring-inset ring-neutral-200/80" />
+                    <div className="absolute inset-0 grid place-items-center text-5xl">{m.emoji ?? '🥙'}</div>
+                    <button
+                      className="absolute bottom-2 right-2 grid h-9 w-9 place-items-center rounded-full bg-neutral-900 text-white shadow-sm"
+                      aria-label="Hinzufügen"
+                      onClick={() => addToCart(m)}
+                    >
+                      +
+                    </button>
                   </div>
                 </div>
-              )}
-            </section>
-          )}
+              </article>
+            ))}
+          </div>
 
-          {tab === 'status' && (
-            <section className="pb-28">
-              <h2 className="text-lg font-semibold">Bestellstatus</h2>
-              {orderIds.length === 0 ? (
-                <p className="mt-3 text-sm text-gray-500">Keine aktiven Bestellungen.</p>
-              ) : (
-                <div className="mt-3 space-y-3">
-                  {orderIds.map((id) => {
-                    const o = ordersById[id];
-                    return (
-                      <div key={id} className="rounded-2xl border bg-white p-4 shadow-sm">
-                        <div className="flex items-center justify-between">
-                          <div className="text-sm text-gray-600">ID: <span className="font-mono">{id}</span></div>
-                          <StatusBadge s={o?.status ?? 'in_queue'} />
-                        </div>
-                        {!o ? (
-                          <p className="mt-2 text-sm text-gray-500">Lade Status…</p>
-                        ) : (
-                          <>
-                            <ul className="mt-3 divide-y text-sm">
-                              {o.lines.map((l) => (
-                                <li key={l.id} className="flex items-start justify-between py-2">
-                                  <div>
-                                    {l.qty}× {l.item?.name}
-                                    {l.specs && Object.keys(l.specs).length > 0 && (
-                                      <div className="text-xs text-gray-600">
-                                        {Object.entries(l.specs).map(([gid, arr]) => (
-                                          <span key={gid} className="mr-2"><span className="font-medium">{labelForGroup(gid, l.item)}:</span> {arr.map((cid) => labelForChoice(gid, cid, l.item)).join(', ')}</span>
-                                        ))}
-                                      </div>
-                                    )}
-                                  </div>
-                                  <div className="text-gray-500">{formatPrice((l.item?.price_cents ?? 0) * l.qty)}</div>
-                                </li>
-                              ))}
-                            </ul>
-                            <div className="mt-2 text-right text-xs text-gray-500">
-                              aktualisiert: {new Date(o.updated_at || o.created_at || '').toLocaleString()}
-                            </div>
-                          </>
+          {/* Mini-Warenkorb */}
+          <div ref={miniCartRef} className="mt-6">
+            <MiniCart
+              lines={lines}
+              totalCents={totalCents}
+              onAdjustQty={adjustQty}
+              onRemoveLine={removeLine}
+              onGoCheckout={() => setTab('checkout')}
+            />
+          </div>
+        </section>
+
+        {/* Kasse */}
+        {tab === 'checkout' && (
+          <section className="pb-28">
+            <h2 className="text-[18px] font-semibold tracking-[-0.02em]">Warenkorb</h2>
+            {lines.length === 0 ? (
+              <p className="mt-3 text-[13px] text-neutral-500">Dein Warenkorb ist leer.</p>
+            ) : (
+              <div className="mt-3 space-y-3">
+                {lines.map((l) => (
+                  <div key={l.id} className="rounded-3xl bg-white p-3 shadow-sm ring-1 ring-black/5">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <div className="font-medium">{l.item?.name}</div>
+                        {l.specs && Object.keys(l.specs).length > 0 && (
+                          <ul className="mt-1 text-[12px] text-neutral-600">
+                            {Object.entries(l.specs).map(([gid, arr]) => (
+                              <li key={gid}><span className="font-medium">{labelForGroup(gid, l.item)}:</span> {arr.map((cid) => labelForChoice(gid, cid, l.item)).join(', ')}</li>
+                            ))}
+                          </ul>
                         )}
                       </div>
-                    );
-                  })}
+                      <div className="text-[13px] text-neutral-500">{formatPrice((l.item?.price_cents ?? 0) * l.qty)}</div>
+                    </div>
+                    <div className="mt-2 flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <button className="rounded-full bg-neutral-100 px-2 py-1" onClick={() => adjustQty(l.id, -1)}>-</button>
+                        <span className="min-w-6 text-center">{l.qty}</span>
+                        <button className="rounded-full bg-neutral-100 px-2 py-1" onClick={() => adjustQty(l.id, +1)}>+</button>
+                      </div>
+                      <button className="text-[13px] text-red-600" onClick={() => removeLine(l.id)}>Entfernen</button>
+                    </div>
+                  </div>
+                ))}
+
+                <div className="flex items-center justify-between rounded-3xl bg-white p-3 shadow-sm ring-1 ring-black/5">
+                  <div className="text-[13px]">Zwischensumme</div>
+                  <div className="text-[15px] font-semibold">{formatPrice(totalCents)}</div>
                 </div>
-              )}
 
-              {/* Archiv-Link (klein, dezent) */}
-              <div className="mt-3 text-center text-xs text-gray-500">
-                <button
-                  className="rounded-full px-3 py-1 underline-offset-2 hover:underline"
-                  onClick={() => setShowArchive((v) => !v)}
-                >
-                  {showArchive ? 'Archiv ausblenden' : `Vergangene Bestellungen ansehen (${archiveIds.length})`}
-                </button>
+                <div className="space-y-3 rounded-3xl bg-white p-3 shadow-sm ring-1 ring-black/5">
+                  <label className="block text-[13px]">E‑Mail (optional)
+                    <input className="mt-1 w-full rounded-xl border border-neutral-200 px-3 py-2 text-[13px]" placeholder="kunde@example.com" value={customerEmail} onChange={(e) => setCustomerEmail(e.target.value)} inputMode="email" />
+                  </label>
+
+                  <label className="block text-[13px]">Telefon (für SMS – optional)
+                    <input className="mt-1 w-full rounded-xl border border-neutral-200 px-3 py-2 text-[13px]" placeholder="+41 79 123 45 67" value={customerPhone} onChange={(e) => setCustomerPhone(e.target.value)} inputMode="tel" />
+                  </label>
+
+                  <button className="w-full rounded-full bg-neutral-900 px-4 py-2 text-[13px] font-semibold text-white shadow-sm" onClick={createOrder} disabled={lines.length === 0}>Bestellung abschicken</button>
+                </div>
               </div>
+            )}
+          </section>
+        )}
 
-              {/* Archivliste (optional sichtbar) */}
-              {showArchive && (
-                <div className="mt-4 space-y-3">
-                  <h3 className="text-sm font-medium text-gray-600">Archiv (heute)</h3>
-                  {archiveIds.length === 0 ? (
-                    <p className="text-sm text-gray-400">Noch keine archivierten Bestellungen.</p>
-                  ) : (
-                    archiveIds.map((id) => {
-                      const o = archiveById[id];
-                      if (!o) return null;
-                      return (
-                        <div key={id} className="rounded-2xl border bg-white p-4 opacity-90">
-                          <div className="flex items-center justify-between">
-                            <div className="text-sm text-gray-600">ID: <span className="font-mono">{id}</span></div>
-                            <span className="rounded-full bg-gray-100 px-2.5 py-1 text-xs text-gray-700">Archiv</span>
-                          </div>
-                          <ul className="mt-3 divide-y text-sm">
+        {/* Status */}
+        {tab === 'status' && (
+          <section className="pb-28">
+            <h2 className="text-[18px] font-semibold tracking-[-0.02em]">Bestellstatus</h2>
+            {orderIds.length === 0 ? (
+              <p className="mt-3 text-[13px] text-neutral-500">Keine aktiven Bestellungen.</p>
+            ) : (
+              <div className="mt-3 space-y-3">
+                {orderIds.map((id) => {
+                  const o = ordersById[id];
+                  return (
+                    <div key={id} className="rounded-3xl bg-white p-4 shadow-sm ring-1 ring-black/5">
+                      <div className="flex items-center justify-between">
+                        <div className="text-[12px] text-neutral-600">ID: <span className="font-mono">{id}</span></div>
+                        <StatusBadge s={o?.status ?? 'in_queue'} />
+                      </div>
+                      {!o ? (
+                        <p className="mt-2 text-[13px] text-neutral-500">Lade Status…</p>
+                      ) : (
+                        <>
+                          <ul className="mt-3 divide-y text-[13px]">
                             {o.lines.map((l) => (
                               <li key={l.id} className="flex items-start justify-between py-2">
                                 <div>
                                   {l.qty}× {l.item?.name}
+                                  {l.specs && Object.keys(l.specs).length > 0 && (
+                                    <div className="text-[12px] text-neutral-600">
+                                      {Object.entries(l.specs).map(([gid, arr]) => (
+                                        <span key={gid} className="mr-2"><span className="font-medium">{labelForGroup(gid, l.item)}:</span> {arr.map((cid) => labelForChoice(gid, cid, l.item)).join(', ')}</span>
+                                      ))}
+                                    </div>
+                                  )}
                                 </div>
-                                <div className="text-gray-500">{formatPrice((l.item?.price_cents ?? 0) * l.qty)}</div>
+                                <div className="text-neutral-500">{formatPrice((l.item?.price_cents ?? 0) * l.qty)}</div>
                               </li>
                             ))}
                           </ul>
-                          <div className="mt-2 text-right text-xs text-gray-400">abgeschlossen: {new Date(o.updated_at || o.created_at || '').toLocaleString()}</div>
-                        </div>
-                      );
-                    })
-                  )}
-                </div>
-              )}
-            </section>
-          )}
-        </main>
-      </div>
+                          <div className="mt-2 text-right text-[11px] text-neutral-500">
+                            aktualisiert: {new Date(o.updated_at || o.created_at || '').toLocaleString()}
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
 
-      {/* Sticky Bottom Cart-Bar wie bei Uber Eats (nur im Menü) */}
-      <div className="pointer-events-none fixed inset-x-0 bottom-16 z-40 mx-auto max-w-3xl px-4 sm:bottom-20">
+            {/* Archiv-Link */}
+            <div className="mt-3 text-center text-[12px] text-neutral-500">
+              <button className="rounded-full px-3 py-1 underline-offset-2 hover:underline" onClick={() => setShowArchive((v) => !v)}>
+                {showArchive ? 'Archiv ausblenden' : `Vergangene Bestellungen ansehen (${archiveIds.length})`}
+              </button>
+            </div>
+
+            {showArchive && (
+              <div className="mt-4 space-y-3">
+                <h3 className="text-[13px] font-medium text-neutral-600">Archiv (heute)</h3>
+                {archiveIds.length === 0 ? (
+                  <p className="text-[13px] text-neutral-400">Noch keine archivierten Bestellungen.</p>
+                ) : (
+                  archiveIds.map((id) => {
+                    const o = archiveById[id];
+                    if (!o) return null;
+                    return (
+                      <div key={id} className="rounded-3xl bg-white p-4 opacity-90 shadow-sm ring-1 ring-black/5">
+                        <div className="flex items-center justify-between">
+                          <div className="text-[12px] text-neutral-600">ID: <span className="font-mono">{id}</span></div>
+                          <span className="rounded-full bg-neutral-100 px-2.5 py-1 text-[11px] text-neutral-700 ring-1 ring-inset ring-neutral-200">Archiv</span>
+                        </div>
+                        <ul className="mt-3 divide-y text-[13px]">
+                          {o.lines.map((l) => (
+                            <li key={l.id} className="flex items-start justify-between py-2">
+                              <div>
+                                {l.qty}× {l.item?.name}
+                              </div>
+                              <div className="text-neutral-500">{formatPrice((l.item?.price_cents ?? 0) * l.qty)}</div>
+                            </li>
+                          ))}
+                        </ul>
+                        <div className="mt-2 text-right text-[11px] text-neutral-400">abgeschlossen: {new Date(o.updated_at || o.created_at || '').toLocaleString()}</div>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+            )}
+          </section>
+        )}
+      </main>
+
+      {/* Sticky Bottom Cart-Bar (nur im Menü) */}
+      <div className="pointer-events-none fixed inset-x-0 bottom-16 z-40 mx-auto max-w-5xl px-4 sm:bottom-20">
         {itemCount > 0 && tab === 'menu' && (
-          <div className="pointer-events-auto flex items-center justify-between gap-3 rounded-full bg-black px-4 py-3 text-white shadow-lg">
+          <div className="pointer-events-auto flex items-center justify-between gap-3 rounded-full bg-neutral-900 px-4 py-3 text-white shadow-lg ring-1 ring-black/10">
             <div className="flex items-center gap-2">
               <span className="grid h-7 w-7 place-items-center rounded-full bg-white/10 text-sm">{itemCount}</span>
-              <span className="text-sm">Warenkorb</span>
+              <span className="text-[13px]">Warenkorb</span>
             </div>
-            <button className="rounded-full bg-white px-3 py-1.5 text-sm font-semibold text-black" onClick={() => setTab('checkout')}>
+            <button className="rounded-full bg-white px-3 py-1.5 text-[13px] font-semibold text-neutral-900" onClick={() => setTab('checkout')}>
               {formatPrice(totalCents)} · Ansehen
             </button>
           </div>
         )}
       </div>
 
-      {/* Bottom Navigation (App-Feeling) */}
-      <nav className="fixed inset-x-0 bottom-0 z-50 border-t bg-white/90 backdrop-blur">
-        <div className="mx-auto grid max-w-3xl grid-cols-3">
+      {/* Bottom Navigation */}
+      <nav className="fixed inset-x-0 bottom-0 z-50 border-t border-neutral-200 bg-white/90 backdrop-blur-xl">
+        <div className="mx-auto grid max-w-5xl grid-cols-3">
           {(
             [
               { key: 'menu', label: 'Menü', icon: '🍴' },
@@ -678,7 +629,7 @@ export default function Page() {
             <button
               key={t.key}
               onClick={() => setTab(t.key as Tab)}
-              className={`flex h-14 flex-col items-center justify-center text-xs ${tab === t.key ? 'font-semibold text-emerald-700' : 'text-gray-600'}`}
+              className={`flex h-14 flex-col items-center justify-center text-[11px] ${tab === t.key ? 'font-semibold text-neutral-900' : 'text-neutral-600'}`}
             >
               <span className="text-lg">{t.icon}</span>
               {t.label}
@@ -687,6 +638,16 @@ export default function Page() {
         </div>
       </nav>
 
+      {/* Ready-Banner */}
+      {showReadyBanner && (
+        <div className="fixed left-1/2 top-3 z-50 -translate-x-1/2">
+          <div className="flex items-center gap-3 rounded-full bg-emerald-600 px-4 py-2 text-white shadow-lg ring-1 ring-emerald-700/40">
+            <span>🥙 {bannerText || 'Deine Bestellung ist abholbereit'}</span>
+            <button onClick={() => setShowReadyBanner(false)} className="rounded-full bg-white/20 px-2 py-1 text-[12px] transition hover:bg-white/30">Schließen</button>
+          </div>
+        </div>
+      )}
+
       {/* Modal: Customize */}
       {customizing && (
         <Dialog onClose={() => setCustomizing(null)}>
@@ -694,7 +655,7 @@ export default function Page() {
             item={customizing.item}
             initialSpecs={customizing.specs}
             onCancel={() => setCustomizing(null)}
-            onConfirm={(specs) => { addToCart(customizing.item, specs); setCustomizing(null); /* Mini-Cart zeigt Button zur Kasse */ }}
+            onConfirm={(specs) => { addToCart(customizing.item, specs); setCustomizing(null); }}
           />
         </Dialog>
       )}
@@ -706,14 +667,11 @@ export default function Page() {
 function GreenFlash({ durationMs }: { durationMs: number }) {
   const [off, setOff] = useState(false);
   useEffect(() => {
-    const start = setTimeout(() => setOff(true), 50); // start transition
+    const start = setTimeout(() => setOff(true), 50);
     return () => clearTimeout(start);
   }, []);
   return (
-    <div
-      className={`pointer-events-none fixed inset-0 z-40 bg-emerald-200/60 transition-opacity ${off ? 'opacity-0' : 'opacity-100'}`}
-      style={{ transitionDuration: `${durationMs}ms` }}
-    />
+    <div className={`pointer-events-none fixed inset-0 z-40 bg-emerald-200/60 transition-opacity ${off ? 'opacity-0' : 'opacity-100'}`} style={{ transitionDuration: `${durationMs}ms` }} />
   );
 }
 
@@ -722,13 +680,13 @@ function GreenFlash({ durationMs }: { durationMs: number }) {
 // ==========================
 function StatusBadge({ s }: { s: OrderStatus }) {
   const map: Record<OrderStatus, { text: string; cls: string }> = {
-    in_queue: { text: 'In Queue', cls: 'bg-gray-100 text-gray-700' },
-    preparing: { text: 'Preparing', cls: 'bg-amber-100 text-amber-800' },
+    in_queue: { text: 'In Queue', cls: 'bg-neutral-100 text-neutral-700 ring-1 ring-inset ring-neutral-200' },
+    preparing: { text: 'Preparing', cls: 'bg-amber-100 text-amber-800 ring-1 ring-inset ring-amber-200' },
     ready: { text: 'Ready', cls: 'bg-emerald-600 text-white' },
-    picked_up: { text: 'Picked up', cls: 'bg-sky-100 text-sky-800' },
+    picked_up: { text: 'Picked up', cls: 'bg-sky-100 text-sky-800 ring-1 ring-inset ring-sky-200' },
   };
   const it = map[s] ?? map.in_queue;
-  return <span className={`rounded-full px-2.5 py-1 text-xs ${it.cls}`}>{it.text}</span>;
+  return <span className={`rounded-full px-2.5 py-1 text-[11px] ${it.cls}`}>{it.text}</span>;
 }
 function labelForGroup(groupId: string, item?: MenuItem | null) {
   const g = item?.options?.find((z) => z.id === groupId); return g?.label ?? groupId;
@@ -742,7 +700,7 @@ function Dialog({ children, onClose }: { children: React.ReactNode; onClose: () 
   return (
     <div className="fixed inset-0 z-50 grid place-items-center bg-black/30 p-3" role="dialog" aria-modal="true">
       <div className="absolute inset-0" onClick={onClose} />
-      <div className="relative z-10 w-full max-w-md rounded-2xl border bg-white p-4 shadow-lg">{children}</div>
+      <div className="relative z-10 w-full max-w-md rounded-3xl bg-white p-4 shadow-xl ring-1 ring-black/5">{children}</div>
     </div>
   );
 }
@@ -762,19 +720,19 @@ function CustomizeCard({ item, initialSpecs, onCancel, onConfirm }: { item: Menu
       <div className="flex items-start gap-3">
         <div className="text-3xl">{item.emoji ?? '🥙'}</div>
         <div>
-          <div className="text-lg font-semibold">{item.name}</div>
-          <div className="text-sm text-gray-500">{formatPrice(item.price_cents)}</div>
+          <div className="text-[16px] font-semibold tracking-[-0.015em]">{item.name}</div>
+          <div className="text-[13px] text-neutral-500">{formatPrice(item.price_cents)}</div>
         </div>
       </div>
       <div className="mt-4 space-y-4">
         {(item.options || []).map((g) => (
           <div key={g.id}>
-            <div className="text-sm font-medium">{g.label}{g.required ? ' *' : ''}</div>
+            <div className="text-[13px] font-medium">{g.label}{g.required ? ' *' : ''}</div>
             <div className="mt-2 flex flex-wrap gap-2">
               {g.choices.map((c) => {
                 const selected = (specs[g.id] ?? []).includes(c.id);
                 return (
-                  <button key={c.id} onClick={() => toggle(g, c.id)} className={`rounded-full px-3 py-1.5 text-sm shadow ${selected ? 'bg-emerald-600 text-white' : 'bg-gray-100 text-gray-800 hover:bg-gray-200'}`}>{c.label}</button>
+                  <button key={c.id} onClick={() => toggle(g, c.id)} className={`rounded-full px-3 py-1.5 text-[13px] shadow-sm ring-1 ${selected ? 'bg-emerald-600 text-white ring-emerald-600/30' : 'bg-neutral-100 text-neutral-800 ring-neutral-200 hover:bg-neutral-200'}`}>{c.label}</button>
                 );
               })}
             </div>
@@ -782,14 +740,14 @@ function CustomizeCard({ item, initialSpecs, onCancel, onConfirm }: { item: Menu
         ))}
       </div>
       <div className="mt-5 flex justify-end gap-2">
-        <button className="rounded-xl bg-white px-4 py-2 text-sm ring-1 ring-gray-200" onClick={onCancel}>Abbrechen</button>
-        <button className="rounded-xl bg-emerald-600 px-4 py-2 text-sm text-white disabled:opacity-50" onClick={() => onConfirm(specs)} disabled={!canConfirm}>Hinzufügen</button>
+        <button className="rounded-full bg-white px-4 py-2 text-[13px] ring-1 ring-neutral-200" onClick={onCancel}>Abbrechen</button>
+        <button className="rounded-full bg-neutral-900 px-4 py-2 text-[13px] font-semibold text-white disabled:opacity-50" onClick={() => onConfirm(specs)} disabled={!canConfirm}>Hinzufügen</button>
       </div>
     </div>
   );
 }
 
-// Mini-Warenkorb-Komponente (unter Menü sichtbar)
+// Mini-Warenkorb
 function MiniCart({
   lines,
   totalCents,
@@ -804,23 +762,23 @@ function MiniCart({
   onGoCheckout: () => void;
 }) {
   return (
-    <div className="rounded-2xl border bg-white p-4 shadow-sm">
+    <div className="rounded-3xl bg-white p-4 shadow-sm ring-1 ring-black/5">
       <div className="flex items-center justify-between">
-        <h3 className="text-base font-semibold">Dein Warenkorb</h3>
-        <div className="text-sm text-gray-500">{lines.length} Artikel</div>
+        <h3 className="text-[15px] font-semibold tracking-[-0.015em]">Dein Warenkorb</h3>
+        <div className="text-[12px] text-neutral-500">{lines.length} Artikel</div>
       </div>
 
       {lines.length === 0 ? (
-        <p className="mt-2 text-sm text-gray-500">Noch leer – wähle ein Gericht aus.</p>
+        <p className="mt-2 text-[13px] text-neutral-500">Noch leer – wähle ein Gericht aus.</p>
       ) : (
         <>
-          <ul className="mt-3 divide-y text-sm">
+          <ul className="mt-3 divide-y text-[13px]">
             {lines.map((l) => (
               <li key={l.id} className="flex items-start justify-between py-2">
                 <div>
                   <div className="font-medium">{l.item?.name}</div>
                   {l.specs && Object.keys(l.specs).length > 0 && (
-                    <div className="text-xs text-gray-600">
+                    <div className="text-[12px] text-neutral-600">
                       {Object.entries(l.specs).map(([gid, arr]) => (
                         <span key={gid} className="mr-2">{arr.join(', ')}</span>
                       ))}
@@ -828,12 +786,12 @@ function MiniCart({
                   )}
                 </div>
                 <div className="text-right">
-                  <div className="text-gray-500">{formatPrice((l.item?.price_cents ?? 0) * l.qty)}</div>
+                  <div className="text-neutral-500">{formatPrice((l.item?.price_cents ?? 0) * l.qty)}</div>
                   <div className="mt-1 flex items-center justify-end gap-2">
-                    <button className="rounded-full bg-gray-100 px-2 py-1" onClick={() => onAdjustQty(l.id, -1)}>-</button>
+                    <button className="rounded-full bg-neutral-100 px-2 py-1" onClick={() => onAdjustQty(l.id, -1)}>-</button>
                     <span className="min-w-6 text-center">{l.qty}</span>
-                    <button className="rounded-full bg-gray-100 px-2 py-1" onClick={() => onAdjustQty(l.id, +1)}>+</button>
-                    <button className="text-xs text-red-600" onClick={() => onRemoveLine(l.id)}>Entfernen</button>
+                    <button className="rounded-full bg-neutral-100 px-2 py-1" onClick={() => onAdjustQty(l.id, +1)}>+</button>
+                    <button className="text-[12px] text-red-600" onClick={() => onRemoveLine(l.id)}>Entfernen</button>
                   </div>
                 </div>
               </li>
@@ -841,16 +799,11 @@ function MiniCart({
           </ul>
 
           <div className="mt-3 flex items-center justify-between">
-            <div className="text-sm">Zwischensumme</div>
-            <div className="text-base font-semibold">{formatPrice(totalCents)}</div>
+            <div className="text-[13px]">Zwischensumme</div>
+            <div className="text-[15px] font-semibold">{formatPrice(totalCents)}</div>
           </div>
 
-          <button
-            className="mt-3 w-full rounded-xl bg-emerald-600 px-4 py-2 text-white shadow hover:bg-emerald-700"
-            onClick={onGoCheckout}
-          >
-            Zur Kasse
-          </button>
+          <button className="mt-3 w-full rounded-full bg-neutral-900 px-4 py-2 text-[13px] font-semibold text-white shadow-sm" onClick={onGoCheckout}>Zur Kasse</button>
         </>
       )}
     </div>
