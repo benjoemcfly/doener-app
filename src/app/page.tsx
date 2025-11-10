@@ -42,7 +42,7 @@ export type Order = {
 };
 
 // ==========================
-// Kategorien & Menüdaten (aus Website abgeleitet)
+// Kategorien & Menüdaten
 // ==========================
 const CATEGORY_TABS = ['Döner', 'Folded', 'Pide', 'Bowls', 'Vegan', 'Fingerfood', 'Getränke'] as const;
 export type Category = (typeof CATEGORY_TABS)[number];
@@ -52,16 +52,23 @@ function baseOptionGroups(opts?: { includeBread?: boolean; limitedSalad?: boolea
   const limitedSalad = opts?.limitedSalad ?? false;
   const groups: OptionGroup[] = [
     includeBread
-      ? { id: 'bread', label: 'Brot', type: 'single', required: true, choices: [ { id: 'fladenbrot', label: 'Fladenbrot' }, { id: 'yufka', label: 'Yufka' } ] }
+      ? { id: 'bread', label: 'Brot', type: 'single', required: true, choices: [{ id: 'fladenbrot', label: 'Fladenbrot' }, { id: 'yufka', label: 'Yufka' }] }
       : ({ id: 'base', label: 'Basis', type: 'single', required: true, choices: [{ id: 'box', label: 'Box' }] } as OptionGroup),
-    { id: 'sauce', label: 'Soßen', type: 'multi', choices: [ { id: 'knoblauch', label: 'Knoblauch' }, { id: 'scharf', label: 'Scharf' }, { id: 'cocktail', label: 'Cocktail' }, { id: 'joghurt', label: 'Joghurt' } ] },
-    { id: 'salad', label: 'Salat', type: 'multi', choices: limitedSalad ? [ { id: 'salatmix', label: 'Salatmix' }, { id: 'zwiebeln', label: 'Zwiebeln' } ] : [ { id: 'salatmix', label: 'Salatmix' }, { id: 'tomaten', label: 'Tomaten' }, { id: 'zwiebeln', label: 'Zwiebeln' }, { id: 'gurken', label: 'Gurken' }, { id: 'kraut', label: 'Kraut' } ] },
-    { id: 'spice', label: 'Schärfe', type: 'single', choices: [ { id: 'mild', label: 'Mild' }, { id: 'mittel', label: 'Mittel' }, { id: 'scharf', label: 'Scharf' } ] },
+    { id: 'sauce', label: 'Soßen', type: 'multi', choices: [{ id: 'knoblauch', label: 'Knoblauch' }, { id: 'scharf', label: 'Scharf' }, { id: 'cocktail', label: 'Cocktail' }, { id: 'joghurt', label: 'Joghurt' }] },
+    {
+      id: 'salad',
+      label: 'Salat',
+      type: 'multi',
+      choices: limitedSalad
+        ? [{ id: 'salatmix', label: 'Salatmix' }, { id: 'zwiebeln', label: 'Zwiebeln' }]
+        : [{ id: 'salatmix', label: 'Salatmix' }, { id: 'tomaten', label: 'Tomaten' }, { id: 'zwiebeln', label: 'Zwiebeln' }, { id: 'gurken', label: 'Gurken' }, { id: 'kraut', label: 'Kraut' }],
+    },
+    { id: 'spice', label: 'Schärfe', type: 'single', choices: [{ id: 'mild', label: 'Mild' }, { id: 'mittel', label: 'Mittel' }, { id: 'scharf', label: 'Scharf' }] },
   ];
   return groups;
 }
 
-// Menü-Einträge pro Kategorie (Preise in CHF -> *100)
+// Menü-Einträge (Preise in CHF -> *100)
 const MENU_BY_CATEGORY: Record<Category, MenuItem[]> = {
   Döner: [
     { id: 'doener_kebab', name: 'Döner Kebab', price_cents: 1900, emoji: '🥙', options: baseOptionGroups() },
@@ -109,7 +116,9 @@ const MENU_BY_CATEGORY: Record<Category, MenuItem[]> = {
 function formatPrice(cents: number) {
   return (cents / 100).toLocaleString('de-CH', { style: 'currency', currency: 'CHF', minimumFractionDigits: 2 });
 }
-function sumCart(lines: OrderLine[]) { return lines.reduce((acc, l) => acc + (l.item?.price_cents ?? 0) * l.qty, 0); }
+function sumCart(lines: OrderLine[]) {
+  return lines.reduce((acc, l) => acc + (l.item?.price_cents ?? 0) * l.qty, 0);
+}
 const LS_KEY = 'order_ids_v1';
 const ARCHIVE_LS_KEY = 'order_archive_v1';
 const todayStr = () => new Date().toISOString().slice(0, 10);
@@ -123,6 +132,17 @@ export type Tab = (typeof tabs)[number];
 export default function Page() {
   const [tab, setTab] = useState<Tab>('menu');
   const [activeCategory, setActiveCategory] = useState<Category>('Döner');
+
+  // Refs für jede Kategorie-Sektion (für Scroll & Observer)
+  const sectionRefs = useRef<Record<Category, HTMLDivElement | null>>({
+    Döner: null,
+    Folded: null,
+    Pide: null,
+    Bowls: null,
+    Vegan: null,
+    Fingerfood: null,
+    Getränke: null,
+  });
 
   // Warenkorb
   const [cart, setCart] = useState<OrderLine[]>([]);
@@ -153,6 +173,7 @@ export default function Page() {
   const allReadyRef = useRef(false);
 
   // Benachrichtigung pro Order einmalig
+  the_notified_init:
   const notifiedRef = useRef<Record<string, boolean>>({});
   const { soundEnabled, enableSound, trigger } = useReadyFeedback();
 
@@ -190,10 +211,14 @@ export default function Page() {
   }, []);
 
   const persistIds = useCallback((ids: string[]) => {
-    try { localStorage.setItem(LS_KEY, JSON.stringify(ids)); } catch {}
+    try {
+      localStorage.setItem(LS_KEY, JSON.stringify(ids));
+    } catch {}
   }, []);
   const persistArchive = useCallback((ids: string[], byId: Record<string, Order>) => {
-    try { localStorage.setItem(ARCHIVE_LS_KEY, JSON.stringify({ date: todayStr(), ids, byId })); } catch {}
+    try {
+      localStorage.setItem(ARCHIVE_LS_KEY, JSON.stringify({ date: todayStr(), ids, byId }));
+    } catch {}
   }, []);
 
   // Polling aller bekannten Orders (alle 5s)
@@ -214,7 +239,9 @@ export default function Page() {
           if (o.status === 'ready' && !notifiedRef.current[id]) {
             notifiedRef.current[id] = true;
             trigger();
-            try { navigator.serviceWorker?.controller?.postMessage({ type: 'VIBRATE', body: 'Eine Bestellung ist abholbereit!' }); } catch {}
+            try {
+              navigator.serviceWorker?.controller?.postMessage({ type: 'VIBRATE', body: 'Eine Bestellung ist abholbereit!' });
+            } catch {}
             setBannerText('Eine Bestellung ist abholbereit');
             setShowReadyBanner(true);
             setFlashMs(1500);
@@ -275,7 +302,10 @@ export default function Page() {
 
     fetchAll();
     const t = setInterval(fetchAll, 5000);
-    return () => { stopped = true; clearInterval(t); };
+    return () => {
+      stopped = true;
+      clearInterval(t);
+    };
   }, [orderIds, trigger, persistIds, persistArchive]);
 
   // Cart helpers
@@ -333,7 +363,7 @@ export default function Page() {
     }
   }, [cart, totalCents, customerEmail, customerPhone, persistIds]);
 
-  // Beim Klick auf ein Gericht: direkt Konfigurator öffnen
+  // Beim Klick auf ein Gericht: Konfigurator öffnen
   const openCustomize = useCallback((m: MenuItem) => {
     const initialSpecs = (m.options || []).reduce<Record<string, string[]>>((acc, g) => {
       acc[g.id] = g.type === 'single' && g.required && g.choices.length > 0 ? [g.choices[0].id] : [];
@@ -342,8 +372,42 @@ export default function Page() {
     setCustomizing({ item: m, specs: initialSpecs });
   }, []);
 
+  // ========= Scroll-Logik: Chips -> Sektionen (smooth) & Auto-Highlight
+  const scrollToCategory = useCallback((c: Category) => {
+    const el = sectionRefs.current[c];
+    if (!el) return;
+    // wegen Sticky-Header genügend Offset
+    const y = el.getBoundingClientRect().top + window.scrollY - 90; // ~Headerhöhe
+    window.scrollTo({ top: y, behavior: 'smooth' });
+    setActiveCategory(c); // direktes Feedback
+  }, []);
+
+  useEffect(() => {
+    const els = CATEGORY_TABS.map((c) => sectionRefs.current[c]).filter(Boolean) as HTMLDivElement[];
+    if (!els.length) return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        // Abschnitt, der am sichtbarsten ist, gewinnt
+        const visible = entries
+          .filter((e) => e.isIntersecting)
+          .sort((a, b) => b.intersectionRatio - a.intersectionRatio)[0];
+        if (!visible) return;
+        const id = (visible.target as HTMLElement).dataset['cat'] as Category | undefined;
+        if (id && id !== activeCategory) setActiveCategory(id);
+      },
+      {
+        root: null,
+        threshold: [0.2, 0.4, 0.6],
+        rootMargin: '-64px 0px -50% 0px', // Header abziehen & früher triggern
+      }
+    );
+    els.forEach((el) => observer.observe(el));
+    return () => observer.disconnect();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // ==========================
-  // UI (Uber‑ähnlicher, hochwertiger Look)
+  // UI
   // ==========================
   const itemCount = useMemo(() => lines.reduce((a, l) => a + l.qty, 0), [lines]);
 
@@ -359,15 +423,16 @@ export default function Page() {
             <div className="flex items-center gap-3">
               <div className="grid h-9 w-9 place-items-center rounded-xl bg-emerald-600 text-white shadow-sm ring-1 ring-emerald-700/20">🥙</div>
               <div className="leading-tight">
-                <div className="text-[15px] font-semibold tracking-[-0.015em]">Döner Self‑Ordering</div>
+                <div className="text-[15px] font-semibold tracking-[-0.015em]">Döner Self-Ordering</div>
                 <div className="text-[11px] text-neutral-500">Jetzt • 10–20 Min</div>
               </div>
             </div>
-            <div className="flex items-center gap-2">
-              <button onClick={enableSound} className={`rounded-full px-3 py-2 text-xs shadow-sm ring-1 ${soundEnabled ? 'bg-emerald-50 text-emerald-700 ring-emerald-600/20' : 'bg-black text-white ring-black/10'}`}>
-                {soundEnabled ? '🔔 Ton aktiv' : '🔔 Ton aktivieren'}
-              </button>
-            </div>
+            <button
+              onClick={enableSound}
+              className={`rounded-full px-3 py-2 text-xs shadow-sm ring-1 ${soundEnabled ? 'bg-emerald-50 text-emerald-700 ring-emerald-600/20' : 'bg-black text-white ring-black/10'}`}
+            >
+              {soundEnabled ? '🔔 Ton aktiv' : '🔔 Ton aktivieren'}
+            </button>
           </div>
 
           {/* Suchfeld */}
@@ -381,83 +446,85 @@ export default function Page() {
       </header>
 
       <main className="mx-auto max-w-5xl px-4">
-        {/* Sekundär-Navigation (Desktop) */}
-        <nav className="mt-4 hidden items-center gap-2 sm:flex">
-          {(['menu','checkout','status'] as const).map((key) => (
-            <button key={key} onClick={() => setTab(key)} className={`rounded-full px-4 py-2 text-[13px] shadow-sm ring-1 transition ${tab === key ? 'bg-black text-white ring-black/10' : 'bg-white text-neutral-800 ring-neutral-200 hover:bg-neutral-50'}`}>
-              {key === 'menu' && 'Menü'}
-              {key === 'checkout' && 'Kasse'}
-              {key === 'status' && 'Status'}
+        {/* Kategorie-Chips (scrollen zur Sektion) */}
+        <div className="mt-4 flex snap-x gap-2 overflow-x-auto pb-1 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
+          {CATEGORY_TABS.map((c) => (
+            <button
+              key={c}
+              onClick={() => scrollToCategory(c)}
+              className={`snap-start rounded-full px-3.5 py-1.5 text-[13px] shadow-sm ring-1 ${
+                activeCategory === c ? 'bg-neutral-900 text-white ring-neutral-900/10' : 'bg-white text-neutral-800 ring-neutral-200 hover:bg-neutral-50'
+              }`}
+            >
+              {c}
             </button>
           ))}
-        </nav>
+        </div>
 
-        {/* === MENU === */}
+        {/* === MENÜ: fortlaufend alle Kategorien === */}
         {tab === 'menu' && (
-          <>
-            {/* Headline */}
-            <h2 className="mt-6 text-[22px] font-semibold tracking-[-0.02em] text-neutral-900">Wähle dein Gericht</h2>
+          <section className="pb-28">
+            {CATEGORY_TABS.map((cat) => (
+              <div
+                key={cat}
+                ref={(el) => (sectionRefs.current[cat] = el)}
+                data-cat={cat}
+                className="scroll-mt-28"
+              >
+                <h2 className="mt-6 text-[22px] font-semibold tracking-[-0.02em] text-neutral-900">{cat}</h2>
+                <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
+                  {MENU_BY_CATEGORY[cat].map((m) => (
+                    <article key={m.id} className="group rounded-3xl bg-white shadow-sm ring-1 ring-black/5 transition hover:shadow-md">
+                      <div className="grid grid-cols-[1fr_140px] items-center gap-4 p-4">
+                        {/* Textspalte */}
+                        <div>
+                          <h3 className="text-[15px] font-semibold leading-tight tracking-[-0.015em] text-neutral-900">{m.name}</h3>
+                          <div className="mt-1 text-[13px] text-neutral-500">{formatPrice(m.price_cents)}</div>
+                          <div className="mt-2 text-[12px] text-emerald-700">Tippe um zu konfigurieren</div>
 
-            {/* Kategorie-Pills (scrollbar) */}
-            <div className="mt-3 flex snap-x gap-2 overflow-x-auto pb-1 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
-              {CATEGORY_TABS.map((c) => (
-                <button
-                  key={c}
-                  onClick={() => setActiveCategory(c)}
-                  className={`snap-start rounded-full px-3.5 py-1.5 text-[13px] shadow-sm ring-1 ${activeCategory === c ? 'bg-neutral-900 text-white ring-neutral-900/10' : 'bg-white text-neutral-800 ring-neutral-200 hover:bg-neutral-50'}`}
-                >
-                  {c}
-                </button>
-              ))}
-            </div>
+                          <div className="mt-3 flex items-center gap-2">
+                            <button className="rounded-full bg-black px-3 py-2 text-[13px] font-medium text-white shadow-sm" onClick={() => addToCart(m)}>
+                              Schnell hinzufügen
+                            </button>
+                            <button
+                              className="rounded-full bg-white px-3 py-2 text-[13px] font-medium text-emerald-700 ring-1 ring-emerald-600/30 hover:bg-emerald-50"
+                              onClick={() => openCustomize(m)}
+                            >
+                              Anpassen
+                            </button>
+                          </div>
+                        </div>
 
-            {/* Produktliste im Uber‑Stil */}
-            <section className="pb-28">
-              <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
-                {MENU_BY_CATEGORY[activeCategory].map((m) => (
-                  <article key={m.id} className="group rounded-3xl bg-white shadow-sm ring-1 ring-black/5 transition hover:shadow-md">
-                    <div className="grid grid-cols-[1fr_140px] items-center gap-4 p-4">
-                      {/* Textspalte */}
-                      <div>
-                        <h3 className="text-[15px] font-semibold leading-tight tracking-[-0.015em] text-neutral-900">{m.name}</h3>
-                        <div className="mt-1 text-[13px] text-neutral-500">{formatPrice(m.price_cents)}</div>
-                        <div className="mt-2 text-[12px] text-emerald-700">Tippe um zu konfigurieren</div>
-
-                        <div className="mt-3 flex items-center gap-2">
-                          <button className="rounded-full bg-black px-3 py-2 text-[13px] font-medium text-white shadow-sm" onClick={() => addToCart(m)}>Schnell hinzufügen</button>
-                          <button className="rounded-full bg-white px-3 py-2 text-[13px] font-medium text-emerald-700 ring-1 ring-emerald-600/30 hover:bg-emerald-50" onClick={() => openCustomize(m)}>Anpassen</button>
+                        {/* Bild/Emoji-Spalte mit + Button */}
+                        <div className="relative h-28 w-full select-none">
+                          <div className="absolute inset-0 rounded-2xl bg-neutral-100/80 ring-1 ring-inset ring-neutral-200/80" />
+                          <div className="absolute inset-0 grid place-items-center text-5xl">{m.emoji ?? '🥙'}</div>
+                          <button
+                            className="absolute bottom-2 right-2 grid h-9 w-9 place-items-center rounded-full bg-neutral-900 text-white shadow-sm"
+                            aria-label="Hinzufügen"
+                            onClick={() => addToCart(m)}
+                          >
+                            +
+                          </button>
                         </div>
                       </div>
-
-                      {/* Bild/Emoji-Spalte mit + Button unten rechts */}
-                      <div className="relative h-28 w-full select-none">
-                        <div className="absolute inset-0 rounded-2xl bg-neutral-100/80 ring-1 ring-inset ring-neutral-200/80" />
-                        <div className="absolute inset-0 grid place-items-center text-5xl">{m.emoji ?? '🥙'}</div>
-                        <button
-                          className="absolute bottom-2 right-2 grid h-9 w-9 place-items-center rounded-full bg-neutral-900 text-white shadow-sm"
-                          aria-label="Hinzufügen"
-                          onClick={() => addToCart(m)}
-                        >
-                          +
-                        </button>
-                      </div>
-                    </div>
-                  </article>
-                ))}
+                    </article>
+                  ))}
+                </div>
               </div>
+            ))}
 
-              {/* Mini-Warenkorb */}
-              <div ref={miniCartRef} className="mt-6">
-                <MiniCart
-                  lines={lines}
-                  totalCents={totalCents}
-                  onAdjustQty={adjustQty}
-                  onRemoveLine={removeLine}
-                  onGoCheckout={() => setTab('checkout')}
-                />
-              </div>
-            </section>
-          </>
+            {/* Mini-Warenkorb */}
+            <div ref={miniCartRef} className="mt-6">
+              <MiniCart
+                lines={lines}
+                totalCents={totalCents}
+                onAdjustQty={adjustQty}
+                onRemoveLine={removeLine}
+                onGoCheckout={() => setTab('checkout')}
+              />
+            </div>
+          </section>
         )}
 
         {/* === CHECKOUT === */}
@@ -476,7 +543,9 @@ export default function Page() {
                         {l.specs && Object.keys(l.specs).length > 0 && (
                           <ul className="mt-1 text-[12px] text-neutral-600">
                             {Object.entries(l.specs).map(([gid, arr]) => (
-                              <li key={gid}><span className="font-medium">{labelForGroup(gid, l.item)}:</span> {arr.map((cid) => labelForChoice(gid, cid, l.item)).join(', ')}</li>
+                              <li key={gid}>
+                                <span className="font-medium">{labelForGroup(gid, l.item)}:</span> {arr.map((cid) => labelForChoice(gid, cid, l.item)).join(', ')}
+                              </li>
                             ))}
                           </ul>
                         )}
@@ -485,11 +554,17 @@ export default function Page() {
                     </div>
                     <div className="mt-2 flex items-center justify-between">
                       <div className="flex items-center gap-2">
-                        <button className="rounded-full bg-neutral-100 px-2 py-1" onClick={() => adjustQty(l.id, -1)}>-</button>
+                        <button className="rounded-full bg-neutral-100 px-2 py-1" onClick={() => adjustQty(l.id, -1)}>
+                          -
+                        </button>
                         <span className="min-w-6 text-center">{l.qty}</span>
-                        <button className="rounded-full bg-neutral-100 px-2 py-1" onClick={() => adjustQty(l.id, +1)}>+</button>
+                        <button className="rounded-full bg-neutral-100 px-2 py-1" onClick={() => adjustQty(l.id, +1)}>
+                          +
+                        </button>
                       </div>
-                      <button className="text-[13px] text-red-600" onClick={() => removeLine(l.id)}>Entfernen</button>
+                      <button className="text-[13px] text-red-600" onClick={() => removeLine(l.id)}>
+                        Entfernen
+                      </button>
                     </div>
                   </div>
                 ))}
@@ -500,15 +575,31 @@ export default function Page() {
                 </div>
 
                 <div className="space-y-3 rounded-3xl bg-white p-3 shadow-sm ring-1 ring-black/5">
-                  <label className="block text-[13px]">E‑Mail (optional)
-                    <input className="mt-1 w-full rounded-xl border border-neutral-200 px-3 py-2 text-[13px]" placeholder="kunde@example.com" value={customerEmail} onChange={(e) => setCustomerEmail(e.target.value)} inputMode="email" />
+                  <label className="block text-[13px]">
+                    E-Mail (optional)
+                    <input
+                      className="mt-1 w-full rounded-xl border border-neutral-200 px-3 py-2 text-[13px]"
+                      placeholder="kunde@example.com"
+                      value={customerEmail}
+                      onChange={(e) => setCustomerEmail(e.target.value)}
+                      inputMode="email"
+                    />
                   </label>
 
-                  <label className="block text-[13px]">Telefon (für SMS – optional)
-                    <input className="mt-1 w-full rounded-xl border border-neutral-200 px-3 py-2 text-[13px]" placeholder="+41 79 123 45 67" value={customerPhone} onChange={(e) => setCustomerPhone(e.target.value)} inputMode="tel" />
+                  <label className="block text-[13px]">
+                    Telefon (für SMS – optional)
+                    <input
+                      className="mt-1 w-full rounded-xl border border-neutral-200 px-3 py-2 text-[13px]"
+                      placeholder="+41 79 123 45 67"
+                      value={customerPhone}
+                      onChange={(e) => setCustomerPhone(e.target.value)}
+                      inputMode="tel"
+                    />
                   </label>
 
-                  <button className="w-full rounded-full bg-neutral-900 px-4 py-2 text-[13px] font-semibold text-white shadow-sm" onClick={createOrder} disabled={lines.length === 0}>Bestellung abschicken</button>
+                  <button className="w-full rounded-full bg-neutral-900 px-4 py-2 text-[13px] font-semibold text-white shadow-sm" onClick={createOrder} disabled={lines.length === 0}>
+                    Bestellung abschicken
+                  </button>
                 </div>
               </div>
             )}
@@ -528,7 +619,9 @@ export default function Page() {
                   return (
                     <div key={id} className="rounded-3xl bg-white p-4 shadow-sm ring-1 ring-black/5">
                       <div className="flex items-center justify-between">
-                        <div className="text-[12px] text-neutral-600">ID: <span className="font-mono">{id}</span></div>
+                        <div className="text-[12px] text-neutral-600">
+                          ID: <span className="font-mono">{id}</span>
+                        </div>
                         <StatusBadge s={o?.status ?? 'in_queue'} />
                       </div>
                       {!o ? (
@@ -543,7 +636,9 @@ export default function Page() {
                                   {l.specs && Object.keys(l.specs).length > 0 && (
                                     <div className="text-[12px] text-neutral-600">
                                       {Object.entries(l.specs).map(([gid, arr]) => (
-                                        <span key={gid} className="mr-2"><span className="font-medium">{labelForGroup(gid, l.item)}:</span> {arr.map((cid) => labelForChoice(gid, cid, l.item)).join(', ')}</span>
+                                        <span key={gid} className="mr-2">
+                                          <span className="font-medium">{labelForGroup(gid, l.item)}:</span> {arr.map((cid) => labelForChoice(gid, cid, l.item)).join(', ')}
+                                        </span>
                                       ))}
                                     </div>
                                   )}
@@ -552,9 +647,7 @@ export default function Page() {
                               </li>
                             ))}
                           </ul>
-                          <div className="mt-2 text-right text-[11px] text-neutral-500">
-                            aktualisiert: {new Date(o.updated_at || o.created_at || '').toLocaleString()}
-                          </div>
+                          <div className="mt-2 text-right text-[11px] text-neutral-500">aktualisiert: {new Date(o.updated_at || o.created_at || '').toLocaleString()}</div>
                         </>
                       )}
                     </div>
@@ -582,15 +675,15 @@ export default function Page() {
                     return (
                       <div key={id} className="rounded-3xl bg-white p-4 opacity-90 shadow-sm ring-1 ring-black/5">
                         <div className="flex items-center justify-between">
-                          <div className="text-[12px] text-neutral-600">ID: <span className="font-mono">{id}</span></div>
+                          <div className="text-[12px] text-neutral-600">
+                            ID: <span className="font-mono">{id}</span>
+                          </div>
                           <span className="rounded-full bg-neutral-100 px-2.5 py-1 text-[11px] text-neutral-700 ring-1 ring-inset ring-neutral-200">Archiv</span>
                         </div>
                         <ul className="mt-3 divide-y text-[13px]">
                           {o.lines.map((l) => (
                             <li key={l.id} className="flex items-start justify-between py-2">
-                              <div>
-                                {l.qty}× {l.item?.name}
-                              </div>
+                              <div>{l.qty}× {l.item?.name}</div>
                               <div className="text-neutral-500">{formatPrice((l.item?.price_cents ?? 0) * l.qty)}</div>
                             </li>
                           ))}
@@ -648,7 +741,9 @@ export default function Page() {
         <div className="fixed left-1/2 top-3 z-50 -translate-x-1/2">
           <div className="flex items-center gap-3 rounded-full bg-emerald-600 px-4 py-2 text-white shadow-lg ring-1 ring-emerald-700/40">
             <span>🥙 {bannerText || 'Deine Bestellung ist abholbereit'}</span>
-            <button onClick={() => setShowReadyBanner(false)} className="rounded-full bg-white/20 px-2 py-1 text-[12px] transition hover:bg-white/30">Schließen</button>
+            <button onClick={() => setShowReadyBanner(false)} className="rounded-full bg-white/20 px-2 py-1 text-[12px] transition hover:bg-white/30">
+              Schließen
+            </button>
           </div>
         </div>
       )}
@@ -660,7 +755,10 @@ export default function Page() {
             item={customizing.item}
             initialSpecs={customizing.specs}
             onCancel={() => setCustomizing(null)}
-            onConfirm={(specs) => { addToCart(customizing.item, specs); setCustomizing(null); }}
+            onConfirm={(specs) => {
+              addToCart(customizing.item, specs);
+              setCustomizing(null);
+            }}
           />
         </Dialog>
       )}
@@ -694,14 +792,21 @@ function StatusBadge({ s }: { s: OrderStatus }) {
   return <span className={`rounded-full px-2.5 py-1 text-[11px] ${it.cls}`}>{it.text}</span>;
 }
 function labelForGroup(groupId: string, item?: MenuItem | null) {
-  const g = item?.options?.find((z) => z.id === groupId); return g?.label ?? groupId;
+  const g = item?.options?.find((z) => z.id === groupId);
+  return g?.label ?? groupId;
 }
 function labelForChoice(groupId: string, choiceId: string, item?: MenuItem | null) {
-  const g = item?.options?.find((x) => x.id === groupId); const c = g?.choices.find((y) => y.id === choiceId); return c?.label ?? choiceId;
+  const g = item?.options?.find((x) => x.id === groupId);
+  const c = g?.choices.find((y) => y.id === choiceId);
+  return c?.label ?? choiceId;
 }
 
 function Dialog({ children, onClose }: { children: React.ReactNode; onClose: () => void }) {
-  useEffect(() => { const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose(); window.addEventListener('keydown', onKey); return () => window.removeEventListener('keydown', onKey); }, [onClose]);
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
   return (
     <div className="fixed inset-0 z-50 grid place-items-center bg-black/30 p-3" role="dialog" aria-modal="true">
       <div className="absolute inset-0" onClick={onClose} />
@@ -710,7 +815,17 @@ function Dialog({ children, onClose }: { children: React.ReactNode; onClose: () 
   );
 }
 
-function CustomizeCard({ item, initialSpecs, onCancel, onConfirm }: { item: MenuItem; initialSpecs: Record<string, string[]>; onCancel: () => void; onConfirm: (specs: Record<string, string[]>) => void; }) {
+function CustomizeCard({
+  item,
+  initialSpecs,
+  onCancel,
+  onConfirm,
+}: {
+  item: MenuItem;
+  initialSpecs: Record<string, string[]>;
+  onCancel: () => void;
+  onConfirm: (specs: Record<string, string[]>) => void;
+}) {
   const [specs, setSpecs] = useState<Record<string, string[]>>(initialSpecs);
   const toggle = useCallback((g: OptionGroup, choiceId: string) => {
     setSpecs((prev) => {
@@ -732,12 +847,23 @@ function CustomizeCard({ item, initialSpecs, onCancel, onConfirm }: { item: Menu
       <div className="mt-4 space-y-4">
         {(item.options || []).map((g) => (
           <div key={g.id}>
-            <div className="text-[13px] font-medium">{g.label}{g.required ? ' *' : ''}</div>
+            <div className="text-[13px] font-medium">
+              {g.label}
+              {g.required ? ' *' : ''}
+            </div>
             <div className="mt-2 flex flex-wrap gap-2">
               {g.choices.map((c) => {
                 const selected = (specs[g.id] ?? []).includes(c.id);
                 return (
-                  <button key={c.id} onClick={() => toggle(g, c.id)} className={`rounded-full px-3 py-1.5 text-[13px] shadow-sm ring-1 ${selected ? 'bg-emerald-600 text-white ring-emerald-600/30' : 'bg-neutral-100 text-neutral-800 ring-neutral-200 hover:bg-neutral-200'}`}>{c.label}</button>
+                  <button
+                    key={c.id}
+                    onClick={() => toggle(g, c.id)}
+                    className={`rounded-full px-3 py-1.5 text-[13px] shadow-sm ring-1 ${
+                      selected ? 'bg-emerald-600 text-white ring-emerald-600/30' : 'bg-neutral-100 text-neutral-800 ring-neutral-200 hover:bg-neutral-200'
+                    }`}
+                  >
+                    {c.label}
+                  </button>
                 );
               })}
             </div>
@@ -745,8 +871,12 @@ function CustomizeCard({ item, initialSpecs, onCancel, onConfirm }: { item: Menu
         ))}
       </div>
       <div className="mt-5 flex justify-end gap-2">
-        <button className="rounded-full bg-white px-4 py-2 text-[13px] ring-1 ring-neutral-200" onClick={onCancel}>Abbrechen</button>
-        <button className="rounded-full bg-neutral-900 px-4 py-2 text-[13px] font-semibold text-white disabled:opacity-50" onClick={() => onConfirm(specs)} disabled={!canConfirm}>Hinzufügen</button>
+        <button className="rounded-full bg-white px-4 py-2 text-[13px] ring-1 ring-neutral-200" onClick={onCancel}>
+          Abbrechen
+        </button>
+        <button className="rounded-full bg-neutral-900 px-4 py-2 text-[13px] font-semibold text-white disabled:opacity-50" onClick={() => onConfirm(specs)} disabled={!canConfirm}>
+          Hinzufügen
+        </button>
       </div>
     </div>
   );
@@ -785,7 +915,9 @@ function MiniCart({
                   {l.specs && Object.keys(l.specs).length > 0 && (
                     <div className="text-[12px] text-neutral-600">
                       {Object.entries(l.specs).map(([gid, arr]) => (
-                        <span key={gid} className="mr-2">{arr.join(', ')}</span>
+                        <span key={gid} className="mr-2">
+                          {arr.join(', ')}
+                        </span>
                       ))}
                     </div>
                   )}
@@ -793,10 +925,16 @@ function MiniCart({
                 <div className="text-right">
                   <div className="text-neutral-500">{formatPrice((l.item?.price_cents ?? 0) * l.qty)}</div>
                   <div className="mt-1 flex items-center justify-end gap-2">
-                    <button className="rounded-full bg-neutral-100 px-2 py-1" onClick={() => onAdjustQty(l.id, -1)}>-</button>
+                    <button className="rounded-full bg-neutral-100 px-2 py-1" onClick={() => onAdjustQty(l.id, -1)}>
+                      -
+                    </button>
                     <span className="min-w-6 text-center">{l.qty}</span>
-                    <button className="rounded-full bg-neutral-100 px-2 py-1" onClick={() => onAdjustQty(l.id, +1)}>+</button>
-                    <button className="text-[12px] text-red-600" onClick={() => onRemoveLine(l.id)}>Entfernen</button>
+                    <button className="rounded-full bg-neutral-100 px-2 py-1" onClick={() => onAdjustQty(l.id, +1)}>
+                      +
+                    </button>
+                    <button className="text-[12px] text-red-600" onClick={() => onRemoveLine(l.id)}>
+                      Entfernen
+                    </button>
                   </div>
                 </div>
               </li>
@@ -808,7 +946,9 @@ function MiniCart({
             <div className="text-[15px] font-semibold">{formatPrice(totalCents)}</div>
           </div>
 
-          <button className="mt-3 w-full rounded-full bg-neutral-900 px-4 py-2 text-[13px] font-semibold text-white shadow-sm" onClick={onGoCheckout}>Zur Kasse</button>
+          <button className="mt-3 w-full rounded-full bg-neutral-900 px-4 py-2 text-[13px] font-semibold text-white shadow-sm" onClick={onGoCheckout}>
+            Zur Kasse
+          </button>
         </>
       )}
     </div>
