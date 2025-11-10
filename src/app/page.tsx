@@ -173,7 +173,6 @@ export default function Page() {
   const allReadyRef = useRef(false);
 
   // Benachrichtigung pro Order einmalig
-  the_notified_init:
   const notifiedRef = useRef<Record<string, boolean>>({});
   const { soundEnabled, enableSound, trigger } = useReadyFeedback();
 
