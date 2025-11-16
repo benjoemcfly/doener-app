@@ -1,6 +1,6 @@
 'use client';
 import React from 'react';
-import type { OrderStatus } from '@/types/order';
+import type { OrderStatus } from '@/app/types/orders';
 
 
 export function StatusBadge({ s }: { s: OrderStatus }) {
