@@ -1,6 +1,11 @@
 'use client';
 
-import React, { useCallback, useRef, useState } from 'react';
+import React, {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from 'react';
 import type { MenuItem } from '@/app/types/orders';
 import { formatPrice } from './helpers';
 
@@ -10,7 +15,7 @@ type MenuViewProps = {
   onQuickAdd: (item: MenuItem) => void;
   onCustomize: (item: MenuItem) => void;
 
-  // optional von außen gesteuerte Kategorie
+  // optional: von außen gesteuerte Kategorie
   activeCategory?: string;
   onChangeCategory?: (category: string) => void;
 };
@@ -23,7 +28,7 @@ export function MenuView({
   activeCategory,
   onChangeCategory,
 }: MenuViewProps) {
-  // interner Fallback-State, falls keine Kategorie von außen kommt
+  // interner Fallback-State, falls nichts von außen kommt
   const [internalCategory, setInternalCategory] = useState<string>(
     categories[0] ?? ''
   );
@@ -41,9 +46,18 @@ export function MenuView({
     [onChangeCategory]
   );
 
-  // Refs für die einzelnen Kategorie-Sektionen (für scrollIntoView)
+  // Refs für Kategorie-Sektionen (für Scroll-Spy & scrollIntoView)
   const sectionRefs = useRef<Record<string, HTMLDivElement | null>>({});
+  // Refs für Tabs (für den animierten Balken)
+  const tabRefs = useRef<Record<string, HTMLButtonElement | null>>({});
+  const navRef = useRef<HTMLDivElement | null>(null);
 
+  const [indicator, setIndicator] = useState<{
+    left: number;
+    width: number;
+  } | null>(null);
+
+  // Scroll zu Kategorie bei Klick
   const scrollToCategory = useCallback(
     (cat: string) => {
       setCategory(cat);
@@ -55,26 +69,97 @@ export function MenuView({
     [setCategory]
   );
 
+  // Scroll-Spy: aktive Kategorie anhand der Scrollposition bestimmen
+  useEffect(() => {
+    const onScroll = () => {
+      if (categories.length === 0) return;
+
+      const threshold = 160; // Abstand von oben, ab wann eine Section "aktiv" ist
+      let bestCat = categories[0];
+      let bestDistance = Number.POSITIVE_INFINITY;
+
+      for (const cat of categories) {
+        const el = sectionRefs.current[cat];
+        if (!el) continue;
+        const rect = el.getBoundingClientRect();
+        const distance = Math.abs(rect.top - threshold);
+
+        if (rect.top <= threshold && distance < bestDistance) {
+          bestDistance = distance;
+          bestCat = cat;
+        }
+      }
+
+      if (bestCat && bestCat !== currentCategory) {
+        setCategory(bestCat);
+      }
+    };
+
+    window.addEventListener('scroll', onScroll, { passive: true });
+    return () => window.removeEventListener('scroll', onScroll);
+  }, [categories, currentCategory, setCategory]);
+
+  // Balken-Position unter dem aktiven Tab berechnen
+  useEffect(() => {
+    const updateIndicator = () => {
+      const nav = navRef.current;
+      const btn = tabRefs.current[currentCategory];
+      if (!nav || !btn) return;
+
+      const navRect = nav.getBoundingClientRect();
+      const btnRect = btn.getBoundingClientRect();
+
+      setIndicator({
+        left: btnRect.left - navRect.left,
+        width: btnRect.width,
+      });
+    };
+
+    updateIndicator();
+    window.addEventListener('resize', updateIndicator);
+    return () => window.removeEventListener('resize', updateIndicator);
+  }, [currentCategory, categories]);
+
   return (
     <section className="pb-28">
-      {/* Kategorien-Navigation (oben, horizontales Scrolling) */}
-      <nav className="mb-3 mt-1 flex items-center gap-2 overflow-x-auto pb-1 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
-        {categories.map((c) => (
-          <button
-            key={c}
-            onClick={() => scrollToCategory(c)}
-            className={`snap-start rounded-full px-3.5 py-1.5 text-[13px] shadow-sm ring-1 ${
-              currentCategory === c
-                ? 'bg-neutral-900 text-white ring-neutral-900/10'
-                : 'bg-white text-neutral-800 ring-neutral-200 hover:bg-neutral-50'
-            }`}
-          >
-            {c}
-          </button>
-        ))}
-      </nav>
+      {/* Sticky Kategorien-Navigation mit animiertem Balken */}
+      <div className="sticky top-16 z-30 bg-neutral-50 pb-2">
+        <div
+          ref={navRef}
+          className="relative border-b border-neutral-200"
+        >
+          <div className="flex items-center gap-2 overflow-x-auto pb-1 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
+            {categories.map((c) => (
+              <button
+                key={c}
+                ref={(el) => {
+                  tabRefs.current[c] = el;
+                }}
+                onClick={() => scrollToCategory(c)}
+                className={`relative snap-start px-3.5 py-2 text-[13px] font-medium transition-colors ${
+                  currentCategory === c
+                    ? 'text-neutral-900'
+                    : 'text-neutral-500 hover:text-neutral-900'
+                }`}
+              >
+                {c}
+              </button>
+            ))}
+          </div>
 
-      {/* Alle Kategorien untereinander – wie früher auf einer Seite */}
+          {indicator && (
+            <div
+              className="pointer-events-none absolute bottom-0 h-[2px] rounded-full bg-neutral-900 transition-[transform,width] duration-200 ease-out"
+              style={{
+                transform: `translateX(${indicator.left}px)`,
+                width: indicator.width,
+              }}
+            />
+          )}
+        </div>
+      </div>
+
+      {/* Alle Kategorien untereinander – alles auf einer Seite */}
       {categories.map((cat) => {
         const items = menuByCategory[cat] ?? [];
         if (!items.length) return null;
