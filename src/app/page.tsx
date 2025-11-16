@@ -13,13 +13,25 @@ import type { MenuItem, Order, OrderLine, OptionGroup } from '@/app/types/order'
 import { useReadyFeedback } from '@/hooks/useReadyFeedback';
 
 // ==========================
-// Tabs
+// Tabs & Kategorien-Typ
 // ==========================
 const tabs = ['menu', 'checkout', 'status'] as const;
 export type Tab = (typeof tabs)[number];
 
+// Kategorien (nur als Typ-Export für andere Module wie CategoryNav/MenuView)
+export const CATEGORY_TABS = [
+  'Döner',
+  'Folded',
+  'Pide',
+  'Bowls',
+  'Vegan',
+  'Fingerfood',
+  'Getränke',
+] as const;
+export type Category = (typeof CATEGORY_TABS)[number];
+
 // ==========================
-// Menü-Konfiguration (einfaches Set mit Optionen)
+// Menü-Konfiguration (Basis-Optionen)
 // ==========================
 function baseOptionGroups(opts?: { includeBread?: boolean; limitedSalad?: boolean }): OptionGroup[] {
   const includeBread = opts?.includeBread ?? true;
@@ -85,6 +97,7 @@ function baseOptionGroups(opts?: { includeBread?: boolean; limitedSalad?: boolea
   return groups;
 }
 
+// Beispiel-Menü – aktuell ohne Kategorien, die Kategorie-Info kommt in MenuView/MenuCatalog
 const MENU: MenuItem[] = [
   {
     id: 'doener_kebab',
@@ -319,7 +332,6 @@ export default function Page() {
 
       {/* Inhalt */}
       <main className="mx-auto max-w-5xl px-4 pb-24 pt-4">
-        {/* Tabs-Umschaltung (Bottom-Navi übernimmt visuell, hier nur Logik) */}
         {tab === 'menu' && (
           <MenuView
             items={MENU}
