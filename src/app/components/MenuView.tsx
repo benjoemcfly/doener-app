@@ -1,6 +1,6 @@
 'use client';
 import React from 'react';
-import type { MenuItem } from '@/types/order';
+import type { MenuItem } from '@/types/orders';
 import { formatPrice, initDefaultSpecs } from './helpers';
 
 

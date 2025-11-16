@@ -1,7 +1,7 @@
 'use client';
 import React from 'react';
 import type { Category } from '@/app/page';
-import type { MenuItem } from '@/app/types/order';
+import type { MenuItem } from '@/app/types/orders';
 
 
 export function MenuCatalog({ categories, menuByCategory, sectionRefs, onQuickAdd, onCustomize }: {

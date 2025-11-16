@@ -1,6 +1,6 @@
 'use client';
 import React, { useCallback, useMemo, useState } from 'react';
-import type { MenuItem, OptionGroup } from '@/app/types/order';
+import type { MenuItem, OptionGroup } from '@/app/types/orders';
 import { formatPrice } from './helpers';
 
 export function CustomizeCard({
