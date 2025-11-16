@@ -18,7 +18,7 @@ import { useReadyFeedback } from '@/hooks/useReadyFeedback';
 const tabs = ['menu', 'checkout', 'status'] as const;
 export type Tab = (typeof tabs)[number];
 
-// Kategorien (nur als Typ-Export für andere Module wie CategoryNav/MenuView)
+// Kategorien (für andere Module wie CategoryNav/MenuView)
 export const CATEGORY_TABS = [
   'Döner',
   'Folded',
@@ -97,7 +97,7 @@ function baseOptionGroups(opts?: { includeBread?: boolean; limitedSalad?: boolea
   return groups;
 }
 
-// Beispiel-Menü – aktuell ohne Kategorien, die Kategorie-Info kommt in MenuView/MenuCatalog
+// Beispiel-Menü – Kategorie-Zuordnung passiert in MenuView/MenuCatalog
 const MENU: MenuItem[] = [
   {
     id: 'doener_kebab',
@@ -145,8 +145,9 @@ export default function Page() {
     specs: Record<string, string[]>;
   } | null>(null);
 
-  // Kontaktfeld (E-Mail)
+  // Kontaktfelder
   const [customerEmail, setCustomerEmail] = useState('');
+  const [customerPhone, setCustomerPhone] = useState(''); // <<<<<< wichtig für SMS
 
   // Aktive Bestellung für Status-Tab
   const [activeOrderId, setActiveOrderId] = useState<string | null>(null);
@@ -249,6 +250,7 @@ export default function Page() {
 
   const totalCents = useMemo(() => sumCart(lines), [lines]);
 
+  // Bestellung erstellen (inkl. SMS-Nummer)
   const createOrder = useCallback(async () => {
     if (lines.length === 0) return;
 
@@ -256,12 +258,14 @@ export default function Page() {
       lines: OrderLine[];
       total_cents: number;
       customer_email?: string;
+      customer_phone?: string; // <<<<<< wie früher
     } = {
       lines,
       total_cents: totalCents,
     };
 
     if (customerEmail) payload.customer_email = customerEmail;
+    if (customerPhone) payload.customer_phone = customerPhone;
 
     const res = await fetch('/api/orders', {
       method: 'POST',
@@ -284,7 +288,9 @@ export default function Page() {
     setTab('status');
     setShowReadyBanner(false);
     setFlashOn(false);
-  }, [customerEmail, lines, totalCents]);
+    // wie in deiner alten Version: Telefonfeld nach Absenden leeren
+    setCustomerPhone('');
+  }, [customerEmail, customerPhone, lines, totalCents]);
 
   // Customize öffnen
   const openCustomize = useCallback((item: MenuItem) => {
@@ -308,9 +314,11 @@ export default function Page() {
         <div className="mx-auto max-w-5xl px-4">
           <div className="flex h-16 items-center justify-between">
             <div className="flex items-center gap-3">
-              <div className="grid h-9 w-9 place-items-center rounded-xl bg-emerald-600 text-white shadow-sm ring-1 ring-emerald-700/20">🥙</div>
+              <div className="grid h-9 w-9 place-items-center rounded-xl bg-emerald-600 text-white shadow-sm ring-1 ring-emerald-700/20">
+                🥙
+              </div>
               <div className="leading-tight">
-                <div className="text-[15px] font-semibold tracking-[-0.015em]">Döner Self‑Ordering</div>
+                <div className="text-[15px] font-semibold tracking-[-0.015em]">Döner Self-Ordering</div>
                 <div className="text-[11px] text-neutral-500">Jetzt • 10–20 Min</div>
               </div>
             </div>
@@ -341,20 +349,21 @@ export default function Page() {
         )}
 
         {tab === 'checkout' && (
-          <CheckoutView
-            lines={lines}
-            totalCents={totalCents}
-            customerEmail={customerEmail}
-            onChangeEmail={setCustomerEmail}
-            onAdjustQty={adjustQty}
-            onRemoveLine={removeLine}
-            onSubmit={createOrder}
-          />
-        )}
+  <CheckoutView
+    lines={lines}
+    totalCents={totalCents}
+    customerEmail={customerEmail}
+    customerPhone={customerPhone}
+    onChangeEmail={setCustomerEmail}
+    onChangePhone={setCustomerPhone}
+    onAdjustQty={adjustQty}
+    onRemoveLine={removeLine}
+    onSubmit={createOrder}
+  />
+)}
 
-        {tab === 'status' && (
-          <StatusView activeOrderId={activeOrderId} activeOrder={activeOrder} />
-        )}
+
+        {tab === 'status' && <StatusView activeOrderId={activeOrderId} activeOrder={activeOrder} />}
       </main>
 
       {/* Sticky Bottom Cart-Bar (nur im Menü) */}
@@ -362,7 +371,9 @@ export default function Page() {
         {itemCount > 0 && tab === 'menu' && (
           <div className="pointer-events-auto flex items-center justify-between gap-3 rounded-full bg-neutral-900 px-4 py-3 text-white shadow-lg ring-1 ring-black/10">
             <div className="flex items-center gap-2">
-              <span className="grid h-7 w-7 place-items-center rounded-full bg-white/10 text-sm">{itemCount}</span>
+              <span className="grid h-7 w-7 place-items-center rounded-full bg-white/10 text-sm">
+                {itemCount}
+              </span>
               <span className="text-[13px]">Warenkorb</span>
             </div>
             <button
@@ -378,11 +389,13 @@ export default function Page() {
       {/* Bottom Navigation */}
       <nav className="fixed inset-x-0 bottom-0 z-50 border-t border-neutral-200 bg-white/90 backdrop-blur-xl">
         <div className="mx-auto grid max-w-5xl grid-cols-3">
-          {([
-            { key: 'menu', label: 'Menü', icon: '🍴' },
-            { key: 'checkout', label: 'Kasse', icon: '🧾' },
-            { key: 'status', label: 'Status', icon: '⏱️' },
-          ] as const).map((t) => (
+          {(
+            [
+              { key: 'menu', label: 'Menü', icon: '🍴' },
+              { key: 'checkout', label: 'Kasse', icon: '🧾' },
+              { key: 'status', label: 'Status', icon: '⏱️' },
+            ] as const
+          ).map((t) => (
             <button
               key={t.key}
               onClick={() => setTab(t.key as Tab)}
