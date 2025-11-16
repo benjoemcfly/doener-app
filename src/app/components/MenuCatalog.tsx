@@ -2,6 +2,7 @@
 import React from 'react';
 import type { Category } from '@/app/page';
 import type { MenuItem } from '@/app/types/orders';
+import { formatPrice } from './helpers';
 
 
 export function MenuCatalog({ categories, menuByCategory, sectionRefs, onQuickAdd, onCustomize }: {
