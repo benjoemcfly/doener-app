@@ -1,4 +1,5 @@
-import type { MenuItem, OrderLine } from '@/types/order';
+import type { MenuItem, OrderLine } from '@/app/types/orders';
+
 
 
 export function formatPrice(cents: number, currency: string = 'EUR') {
