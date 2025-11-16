@@ -1,7 +1,7 @@
 'use client';
 
 import React from 'react';
-import type { Order } from '@/app/types/order';
+import type { Order } from '@/app/types/orders';
 import { StatusBadge } from './StatusBadge';
 import { formatPrice, labelForGroup, labelForChoice } from './helpers';
 
