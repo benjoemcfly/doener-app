@@ -9,7 +9,7 @@ import {
   CustomizeCard,
   sumCart,
 } from '@/app/components';
-import type { MenuItem, Order, OrderLine, OptionGroup } from '@/app/types/order';
+import type { MenuItem, Order, OrderLine, OptionGroup } from '@/app/types/orders';
 import { useReadyFeedback } from '@/hooks/useReadyFeedback';
 
 // ==========================

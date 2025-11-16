@@ -1,6 +1,6 @@
 'use client';
 import React from 'react';
-import type { OrderLine } from '@/app/types/order';
+import type { OrderLine } from '@/app/types/orders';
 import { formatPrice, labelForChoice, labelForGroup } from './helpers';
 
 export function CheckoutView({
