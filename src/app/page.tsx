@@ -1,24 +1,36 @@
 'use client';
 
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import {
-  MenuView,
-  CheckoutView,
-  StatusView,
-  Dialog,
-  CustomizeCard,
-  sumCart,
-} from '@/app/components';
-import type { MenuItem, Order, OrderLine, OptionGroup } from '@/app/types/orders';
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
+
+import { MenuView } from '@/app/components/MenuView';
+import { MiniCart } from '@/app/components/MiniCart';
+import { CheckoutView } from '@/app/components/CheckoutView';
+import { StatusView } from '@/app/components/StatusView';
+import { Dialog } from '@/app/components/Dialog';
+import { CustomizeCard } from '@/app/components/CustomizeCard';
+import { formatPrice, sumCart } from '@/app/components/helpers';
+
+import type {
+  MenuItem,
+  Order,
+  OrderLine,
+  OptionGroup,
+} from '@/types/orders';
+
 import { useReadyFeedback } from '@/hooks/useReadyFeedback';
 
 // ==========================
-// Tabs & Kategorien-Typ
+// Tabs & Kategorien
 // ==========================
-const tabs = ['menu', 'checkout', 'status'] as const;
-export type Tab = (typeof tabs)[number];
+const TABS = ['menu', 'checkout', 'status'] as const;
+export type Tab = (typeof TABS)[number];
 
-// Kategorien (für andere Module wie CategoryNav/MenuView)
 export const CATEGORY_TABS = [
   'Döner',
   'Folded',
@@ -28,14 +40,19 @@ export const CATEGORY_TABS = [
   'Fingerfood',
   'Getränke',
 ] as const;
+
 export type Category = (typeof CATEGORY_TABS)[number];
 
 // ==========================
-// Menü-Konfiguration (Basis-Optionen)
+// Menü-Konfiguration (Optionen & Gerichte)
 // ==========================
-function baseOptionGroups(opts?: { includeBread?: boolean; limitedSalad?: boolean }): OptionGroup[] {
+function baseOptionGroups(opts?: {
+  includeBread?: boolean;
+  limitedSalad?: boolean;
+}): OptionGroup[] {
   const includeBread = opts?.includeBread ?? true;
   const limitedSalad = opts?.limitedSalad ?? false;
+
   const groups: OptionGroup[] = [
     includeBread
       ? {
@@ -67,7 +84,7 @@ function baseOptionGroups(opts?: { includeBread?: boolean; limitedSalad?: boolea
       ],
     },
     {
-      id: 'salat',
+      id: 'salad',
       label: 'Salat',
       type: 'multi',
       choices: limitedSalad
@@ -94,43 +111,185 @@ function baseOptionGroups(opts?: { includeBread?: boolean; limitedSalad?: boolea
       ],
     },
   ];
+
   return groups;
 }
 
-// Beispiel-Menü – Kategorie-Zuordnung passiert in MenuView/MenuCatalog
-const MENU: MenuItem[] = [
-  {
-    id: 'doener_kebab',
-    name: 'Döner Kebab',
-    price_cents: 1900,
-    emoji: '🥙',
-    options: baseOptionGroups(),
-  },
-  {
-    id: 'durum_kebab',
-    name: 'Dürüm Kebab',
-    price_cents: 2000,
-    emoji: '🌯',
-    options: baseOptionGroups(),
-  },
-  {
-    id: 'doener_box',
-    name: 'Döner Box',
-    price_cents: 2100,
-    emoji: '🍱',
-    options: baseOptionGroups({ includeBread: false }),
-  },
-  {
-    id: 'doener_teller',
-    name: 'Döner Teller',
-    price_cents: 2400,
-    emoji: '🍽️',
-    options: baseOptionGroups({ includeBread: false, limitedSalad: true }),
-  },
-];
+// Komplettes Menü nach Kategorien
+const MENU_BY_CATEGORY: Record<Category, MenuItem[]> = {
+  Döner: [
+    {
+      id: 'doener_kebab',
+      name: 'Döner Kebab',
+      price_cents: 1900,
+      emoji: '🥙',
+      options: baseOptionGroups(),
+    },
+    {
+      id: 'durum_kebab',
+      name: 'Dürüm Kebab',
+      price_cents: 2000,
+      emoji: '🌯',
+      options: baseOptionGroups(),
+    },
+    {
+      id: 'doener_box',
+      name: 'Döner Box',
+      price_cents: 2100,
+      emoji: '🍱',
+      options: baseOptionGroups({ includeBread: false }),
+    },
+    {
+      id: 'doener_teller',
+      name: 'Döner Teller',
+      price_cents: 2400,
+      emoji: '🍽️',
+      options: baseOptionGroups({ includeBread: false }),
+    },
+  ],
+  Folded: [
+    {
+      id: 'folded_istanbul',
+      name: 'Istanbul Folded',
+      price_cents: 2300,
+      emoji: '🫓',
+    },
+    {
+      id: 'folded_guadalajara',
+      name: 'Guadalajara Folded',
+      price_cents: 2300,
+      emoji: '🫓',
+    },
+  ],
+  Pide: [
+    {
+      id: 'pide_doener',
+      name: 'Pide Döner & Mozzarella',
+      price_cents: 2400,
+      emoji: '🫓',
+    },
+    {
+      id: 'pide_spinat_feta',
+      name: 'Pide Spinat & Feta',
+      price_cents: 2200,
+      emoji: '🧀',
+    },
+    {
+      id: 'pide_champignons',
+      name: 'Pide Champignons & Frischkäse',
+      price_cents: 2300,
+      emoji: '🍄',
+    },
+    {
+      id: 'pide_feige_ricotta_burrata_honig',
+      name: 'Pide Feige, Ricotta, Burrata & Honig',
+      price_cents: 2500,
+      emoji: '🍯',
+    },
+    {
+      id: 'pide_sucuk_cheddar',
+      name: 'Pide Sucuk & Cheddar',
+      price_cents: 2400,
+      emoji: '🧀',
+    },
+    {
+      id: 'pide_guacamole_rucola_feta',
+      name: 'Pide Guacamole, Rucola & Feta',
+      price_cents: 2400,
+      emoji: '🥑',
+    },
+  ],
+  Bowls: [
+    {
+      id: 'bowl_beirut',
+      name: 'Beirut Bowl',
+      price_cents: 2000,
+      emoji: '🥗',
+    },
+    {
+      id: 'bowl_istanbul',
+      name: 'Istanbul Bowl',
+      price_cents: 2000,
+      emoji: '🥗',
+    },
+    {
+      id: 'bowl_guadalajara',
+      name: 'Guadalajara Bowl',
+      price_cents: 2000,
+      emoji: '🥗',
+    },
+  ],
+  Vegan: [
+    {
+      id: 'falafel',
+      name: 'Falafel',
+      price_cents: 1500,
+      emoji: '🧆',
+    },
+    {
+      id: 'karotte_baellchen',
+      name: 'Karottenbällchen',
+      price_cents: 1500,
+      emoji: '🥕',
+    },
+    {
+      id: 'zucchini_baellchen',
+      name: 'Zucchinibällchen',
+      price_cents: 1500,
+      emoji: '🥒',
+    },
+  ],
+  Fingerfood: [
+    {
+      id: 'chicken_nuggets',
+      name: 'Chicken Nuggets',
+      price_cents: 1500,
+      emoji: '🍗',
+    },
+    {
+      id: 'pommes',
+      name: 'Pommes',
+      price_cents: 800,
+      emoji: '🍟',
+    },
+  ],
+  Getränke: [
+    {
+      id: 'ayran',
+      name: 'Ayran',
+      price_cents: 500,
+      emoji: '🥤',
+    },
+    {
+      id: 'bier',
+      name: 'Bier',
+      price_cents: 600,
+      emoji: '🍺',
+    },
+    {
+      id: 'dose_033',
+      name: 'Softdrink Dose 0.33L',
+      price_cents: 400,
+      emoji: '🥤',
+    },
+    {
+      id: 'flasche_033',
+      name: 'Softdrink Flasche 0.33L',
+      price_cents: 600,
+      emoji: '🧃',
+    },
+  ],
+};
 
 // ==========================
-// Hauptkomponente
+// LocalStorage & Utils
+// ==========================
+const LS_KEY = 'order_ids_v1';
+const ARCHIVE_LS_KEY = 'order_archive_v1';
+const todayStr = () => new Date().toISOString().slice(0, 10);
+
+// ==========================
+// Hauptseite
 // ==========================
 export default function Page() {
   const [tab, setTab] = useState<Tab>('menu');
@@ -138,6 +297,7 @@ export default function Page() {
   // Warenkorb
   const [cart, setCart] = useState<OrderLine[]>([]);
   const lines = cart;
+  const miniCartRef = useRef<HTMLDivElement | null>(null);
 
   // Customize-Modal
   const [customizing, setCustomizing] = useState<{
@@ -147,98 +307,231 @@ export default function Page() {
 
   // Kontaktfelder
   const [customerEmail, setCustomerEmail] = useState('');
-  const [customerPhone, setCustomerPhone] = useState(''); // <<<<<< wichtig für SMS
+  const [customerPhone, setCustomerPhone] = useState('');
 
-  // Aktive Bestellung für Status-Tab
-  const [activeOrderId, setActiveOrderId] = useState<string | null>(null);
-  const [activeOrder, setActiveOrder] = useState<Order | null>(null);
+  // Mehrere Bestellungen
+  const [orderIds, setOrderIds] = useState<string[]>([]); // neueste zuerst
+  const [ordersById, setOrdersById] = useState<Record<string, Order | null>>(
+    {},
+  );
 
-  // Ready-UI
+  // Archiv (nur lokal, Tages-Reset)
+  const [archiveIds, setArchiveIds] = useState<string[]>([]);
+  const [archiveById, setArchiveById] = useState<Record<string, Order>>({});
+  const [showArchive, setShowArchive] = useState(false);
+
+  // Ready-UI: Banner + Flash
   const [showReadyBanner, setShowReadyBanner] = useState(false);
-  const [bannerText, setBannerText] = useState('');
+  const [bannerText, setBannerText] = useState<string>('');
   const [flashOn, setFlashOn] = useState(false);
-  const [flashMs, setFlashMs] = useState(1500);
+  const [flashMs, setFlashMs] = useState<number>(1500);
+  const allReadyRef = useRef(false);
 
+  // Benachrichtigung pro Order einmalig
+  const notifiedRef = useRef<Record<string, boolean>>({});
   const { soundEnabled, enableSound, trigger } = useReadyFeedback();
 
-  // Service Worker für Vibration registrieren (best effort)
+  // Service Worker registrieren (Vibration)
   useEffect(() => {
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('/sw.js').catch(() => {});
     }
   }, []);
 
-  // Polling für aktive Bestellung
+  // Order-IDs aus localStorage laden
   useEffect(() => {
-    if (!activeOrderId) return;
+    try {
+      const raw = localStorage.getItem(LS_KEY);
+      if (raw) {
+        const ids = JSON.parse(raw) as string[];
+        if (Array.isArray(ids) && ids.length) setOrderIds(ids);
+      }
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  // Archiv aus localStorage laden (nur für heute)
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(ARCHIVE_LS_KEY);
+      if (!raw) return;
+      const obj = JSON.parse(raw) as {
+        date: string;
+        ids: string[];
+        byId: Record<string, Order>;
+      };
+      if (obj?.date === todayStr()) {
+        setArchiveIds(obj.ids || []);
+        setArchiveById(obj.byId || {});
+      } else {
+        localStorage.removeItem(ARCHIVE_LS_KEY);
+      }
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  const persistIds = useCallback((ids: string[]) => {
+    try {
+      localStorage.setItem(LS_KEY, JSON.stringify(ids));
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  const persistArchive = useCallback(
+    (ids: string[], byId: Record<string, Order>) => {
+      try {
+        localStorage.setItem(
+          ARCHIVE_LS_KEY,
+          JSON.stringify({ date: todayStr(), ids, byId }),
+        );
+      } catch {
+        // ignore
+      }
+    },
+    [],
+  );
+
+  // Polling aller bekannten Orders (5s)
+  useEffect(() => {
+    if (orderIds.length === 0) return;
 
     let stopped = false;
 
-    const fetchStatus = async () => {
-      try {
-        const res = await fetch(`/api/orders/${activeOrderId}`, { cache: 'no-store' });
-        if (!res.ok) return;
-        const data = (await res.json()) as Order;
-        if (stopped) return;
+    const fetchAll = async () => {
+      const updated: Record<string, Order | null> = {};
 
-        setActiveOrder((prev) => {
-          const wasReady = prev?.status === 'ready';
-          const isReady = data.status === 'ready';
+      for (const id of orderIds) {
+        try {
+          const r = await fetch(`/api/orders/${id}`, { cache: 'no-store' });
+          if (!r.ok) continue;
+          const o = (await r.json()) as Order;
+          if (stopped) return;
 
-          if (!wasReady && isReady) {
+          updated[id] = o;
+
+          if (o.status === 'ready' && !notifiedRef.current[id]) {
+            notifiedRef.current[id] = true;
             trigger();
             try {
               navigator.serviceWorker?.controller?.postMessage({
                 type: 'VIBRATE',
-                body: 'Deine Bestellung ist abholbereit!',
+                body: 'Eine Bestellung ist abholbereit!',
               });
-            } catch {}
-
-            setBannerText('Deine Bestellung ist abholbereit');
+            } catch {
+              // ignore
+            }
+            setBannerText('Eine Bestellung ist abholbereit');
             setShowReadyBanner(true);
             setFlashMs(1500);
             setFlashOn(true);
             setTimeout(() => setFlashOn(false), 1500);
           }
-
-          return data;
-        });
-      } catch {
-        // Ignorieren – nächster Poll versucht es erneut
+        } catch {
+          // ignore einzelne Order
+        }
       }
+
+      setOrdersById((prev) => {
+        const merged = { ...prev, ...updated };
+
+        const now = Date.now();
+        const toArchive: string[] = [];
+
+        for (const id of orderIds) {
+          const o = merged[id];
+          if (!o || o.status !== 'picked_up') continue;
+          const t = new Date(o.updated_at || o.created_at || '').getTime();
+          if (!Number.isFinite(t)) continue;
+          if (now - t >= 3 * 60 * 1000) toArchive.push(id);
+        }
+
+        if (toArchive.length) {
+          setOrderIds((prevIds) => {
+            const next = prevIds.filter((id) => !toArchive.includes(id));
+            persistIds(next);
+            return next;
+          });
+
+          setArchiveById((prevArch) => {
+            const add: Record<string, Order> = {};
+            for (const id of toArchive) add[id] = merged[id]!;
+            const nextById = { ...prevArch, ...add };
+
+            setArchiveIds((prevA) => {
+              const nextIds = [
+                ...toArchive.filter((id) => !prevA.includes(id)),
+                ...prevA,
+              ];
+              persistArchive(nextIds, nextById);
+              return nextIds;
+            });
+
+            return nextById;
+          });
+        }
+
+        const allKnown =
+          orderIds.length > 0 &&
+          orderIds.every((id) => merged[id]?.status === 'ready');
+
+        if (allKnown && !allReadyRef.current) {
+          allReadyRef.current = true;
+          setBannerText('Alle Bestellungen sind abholbereit');
+          setShowReadyBanner(true);
+          setFlashMs(3000);
+          setFlashOn(true);
+          setTimeout(() => setFlashOn(false), 3000);
+        }
+        if (!allKnown) {
+          allReadyRef.current = false;
+        }
+
+        return merged;
+      });
     };
 
-    fetchStatus();
-    const t = setInterval(fetchStatus, 5000);
+    fetchAll();
+    const t = setInterval(fetchAll, 5000);
     return () => {
       stopped = true;
       clearInterval(t);
     };
-  }, [activeOrderId, trigger]);
+  }, [orderIds, trigger, persistIds, persistArchive]);
 
   // Cart-Helper
-  const addToCart = useCallback((mi: MenuItem, specs?: Record<string, string[]>) => {
-    setCart((prev) => [
-      ...prev,
-      {
-        id: crypto.randomUUID(),
-        item: mi,
-        qty: 1,
-        specs: specs ?? {},
-      },
-    ]);
-  }, []);
+  const addToCart = useCallback(
+    (mi: MenuItem, specs?: Record<string, string[]>) => {
+      setCart((prev) => {
+        const next: OrderLine[] = [
+          ...prev,
+          {
+            id: crypto.randomUUID(),
+            item: mi,
+            qty: 1,
+            specs: specs ?? {},
+            note: '',
+          },
+        ];
+        queueMicrotask(() =>
+          miniCartRef.current?.scrollIntoView({
+            behavior: 'smooth',
+            block: 'nearest',
+          }),
+        );
+        return next;
+      });
+    },
+    [],
+  );
 
   const adjustQty = useCallback((id: string, delta: number) => {
     setCart((prev) =>
       prev
-        .map((line) =>
-          line.id === id
-            ? {
-                ...line,
-                qty: Math.max(0, line.qty + delta),
-              }
-            : line,
+        .map((l) =>
+          l.id === id ? { ...l, qty: Math.max(0, l.qty + delta) } : l,
         )
         .filter((l) => l.qty > 0),
     );
@@ -250,66 +543,88 @@ export default function Page() {
 
   const totalCents = useMemo(() => sumCart(lines), [lines]);
 
-  // Bestellung erstellen (inkl. SMS-Nummer)
+  // Bestellung erstellen (inkl. SMS-Feld)
   const createOrder = useCallback(async () => {
-    if (lines.length === 0) return;
+    if (!cart.length) return;
 
     const payload: {
       lines: OrderLine[];
       total_cents: number;
       customer_email?: string;
-      customer_phone?: string; // <<<<<< wie früher
+      customer_phone?: string;
     } = {
-      lines,
+      lines: cart,
       total_cents: totalCents,
     };
 
     if (customerEmail) payload.customer_email = customerEmail;
     if (customerPhone) payload.customer_phone = customerPhone;
 
-    const res = await fetch('/api/orders', {
+    const r = await fetch('/api/orders', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
       cache: 'no-store',
     });
 
-    if (!res.ok) {
-      alert('Fehler beim Absenden der Bestellung');
-      return;
+    if (r.ok) {
+      const { id } = (await r.json()) as { id: string };
+      setCart([]);
+      setTab('status');
+      setShowReadyBanner(false);
+      setShowArchive(false);
+      allReadyRef.current = false;
+      setFlashOn(false);
+
+      setOrderIds((prev) => {
+        const next = [id, ...prev.filter((x) => x !== id)];
+        persistIds(next);
+        return next;
+      });
+
+      setOrdersById((prev) => ({ ...prev, [id]: null }));
+      notifiedRef.current[id] = false;
+      setCustomerPhone('');
+    } else {
+      alert('Fehler beim Absenden');
     }
+  }, [
+    cart,
+    totalCents,
+    customerEmail,
+    customerPhone,
+    persistIds,
+  ]);
 
-    const data = (await res.json()) as { id: string } | { id: string; order: Order };
-    const id = 'order' in data ? data.order.id : data.id;
-
-    setActiveOrderId(id);
-    setActiveOrder(null);
-    setCart([]);
-    setTab('status');
-    setShowReadyBanner(false);
-    setFlashOn(false);
-    // wie in deiner alten Version: Telefonfeld nach Absenden leeren
-    setCustomerPhone('');
-  }, [customerEmail, customerPhone, lines, totalCents]);
-
-  // Customize öffnen
-  const openCustomize = useCallback((item: MenuItem) => {
-    const initialSpecs = (item.options || []).reduce<Record<string, string[]>>((acc, g) => {
-      acc[g.id] = g.type === 'single' && g.required && g.choices.length > 0 ? [g.choices[0].id] : [];
-      return acc;
-    }, {});
-
-    setCustomizing({ item, specs: initialSpecs });
+  // Beim Klick auf ein Gericht: Konfigurator öffnen
+  const openCustomize = useCallback((m: MenuItem) => {
+    const initialSpecs = (m.options || []).reduce<Record<string, string[]>>(
+      (acc, g) => {
+        acc[g.id] =
+          g.type === 'single' && g.required && g.choices.length > 0
+            ? [g.choices[0].id]
+            : [];
+        return acc;
+      },
+      {},
+    );
+    setCustomizing({ item: m, specs: initialSpecs });
   }, []);
 
-  const itemCount = useMemo(() => lines.reduce((sum, l) => sum + l.qty, 0), [lines]);
+  const itemCount = useMemo(
+    () => lines.reduce((a, l) => a + l.qty, 0),
+    [lines],
+  );
 
+  // ==========================
+  // Render
+  // ==========================
   return (
     <div className="min-h-dvh bg-neutral-50 text-neutral-900 antialiased [font-feature-settings:'ss01'_'cv03']">
       {/* Flash-Overlay */}
       {flashOn && <GreenFlash durationMs={flashMs} />}
 
-      {/* Top-Bar */}
+      {/* Top Bar */}
       <header className="sticky top-0 z-40 border-b border-neutral-200/80 bg-white/90 backdrop-blur-xl">
         <div className="mx-auto max-w-5xl px-4">
           <div className="flex h-16 items-center justify-between">
@@ -318,8 +633,12 @@ export default function Page() {
                 🥙
               </div>
               <div className="leading-tight">
-                <div className="text-[15px] font-semibold tracking-[-0.015em]">Döner Self-Ordering</div>
-                <div className="text-[11px] text-neutral-500">Jetzt • 10–20 Min</div>
+                <div className="text-[15px] font-semibold tracking-[-0.015em]">
+                  Döner Self-Ordering
+                </div>
+                <div className="text-[11px] text-neutral-500">
+                  Jetzt • 10–20 Min
+                </div>
               </div>
             </div>
             <div className="flex items-center gap-2">
@@ -335,35 +654,75 @@ export default function Page() {
               </button>
             </div>
           </div>
+
+          {/* Suchfeld (noch ohne Logik) */}
+          <div className="pb-3">
+            <div className="flex items-center gap-2 rounded-full border border-neutral-200 bg-neutral-50 px-4 py-2 text-[13px] text-neutral-500 shadow-sm">
+              <span>🔎</span>
+              <input
+                placeholder="Gericht suchen…"
+                className="w-full bg-transparent outline-none"
+                onChange={() => {}}
+              />
+            </div>
+          </div>
         </div>
       </header>
 
-      {/* Inhalt */}
-      <main className="mx-auto max-w-5xl px-4 pb-24 pt-4">
+      <main className="mx-auto max-w-5xl px-4">
+        {/* MENÜ */}
         {tab === 'menu' && (
-          <MenuView
-            items={MENU}
-            onQuickAdd={(mi) => addToCart(mi)}
-            onCustomize={(mi) => openCustomize(mi)}
-          />
+          <>
+            <MenuView
+              categories={CATEGORY_TABS}
+              menuByCategory={MENU_BY_CATEGORY}
+              onQuickAdd={addToCart}
+              onCustomize={openCustomize}
+            />
+
+            {/* Mini-Warenkorb unterhalb des Menüs */}
+            <div ref={miniCartRef} className="mt-6 pb-28">
+              <MiniCart
+                lines={lines}
+                totalCents={totalCents}
+                onAdjustQty={adjustQty}
+                onRemoveLine={removeLine}
+                onGoCheckout={() => setTab('checkout')}
+              />
+            </div>
+          </>
         )}
 
+        {/* CHECKOUT */}
         {tab === 'checkout' && (
-  <CheckoutView
-    lines={lines}
-    totalCents={totalCents}
-    customerEmail={customerEmail}
-    customerPhone={customerPhone}
-    onChangeEmail={setCustomerEmail}
-    onChangePhone={setCustomerPhone}
-    onAdjustQty={adjustQty}
-    onRemoveLine={removeLine}
-    onSubmit={createOrder}
-  />
-)}
+          <section className="pb-28">
+            <CheckoutView
+              lines={lines}
+              totalCents={totalCents}
+              customerEmail={customerEmail}
+              customerPhone={customerPhone}
+              onChangeEmail={setCustomerEmail}
+              onChangePhone={setCustomerPhone}
+              onAdjustQty={adjustQty}
+              onRemoveLine={removeLine}
+              onSubmit={createOrder}
+            />
+          </section>
+        )}
 
-
-        {tab === 'status' && <StatusView activeOrderId={activeOrderId} activeOrder={activeOrder} />}
+        {/* STATUS */}
+        {tab === 'status' && (
+          <section className="pb-28">
+            <StatusView
+              orderIds={orderIds}
+              ordersById={ordersById}
+              archiveIds={archiveIds}
+              archiveById={archiveById}
+              showArchive={showArchive}
+              onToggleArchive={() => setShowArchive((v) => !v)}
+            />
+          </section>
+        )}
       </main>
 
       {/* Sticky Bottom Cart-Bar (nur im Menü) */}
@@ -374,13 +733,12 @@ export default function Page() {
               <span className="grid h-7 w-7 place-items-center rounded-full bg-white/10 text-sm">
                 {itemCount}
               </span>
-              <span className="text-[13px]">Warenkorb</span>
             </div>
             <button
               className="rounded-full bg-white px-3 py-1.5 text-[13px] font-semibold text-neutral-900"
               onClick={() => setTab('checkout')}
             >
-              Zur Kasse
+              {formatPrice(totalCents)} · Ansehen
             </button>
           </div>
         )}
@@ -448,8 +806,8 @@ function GreenFlash({ durationMs }: { durationMs: number }) {
   const [off, setOff] = useState(false);
 
   useEffect(() => {
-    const t = setTimeout(() => setOff(true), 50);
-    return () => clearTimeout(t);
+    const start = setTimeout(() => setOff(true), 50);
+    return () => clearTimeout(start);
   }, []);
 
   return (
