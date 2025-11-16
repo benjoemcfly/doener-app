@@ -16,12 +16,7 @@ import { Dialog } from '@/app/components/Dialog';
 import { CustomizeCard } from '@/app/components/CustomizeCard';
 import { formatPrice, sumCart } from '@/app/components/helpers';
 
-import type {
-  MenuItem,
-  Order,
-  OrderLine,
-  OptionGroup,
-} from '@/types/orders';
+import type { MenuItem, Order, OrderLine, OptionGroup } from '@/app/types/orders';
 
 import { useReadyFeedback } from '@/hooks/useReadyFeedback';
 
