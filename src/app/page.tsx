@@ -159,6 +159,9 @@ export default function Page() {
   const notifiedRef = useRef<Record<string, boolean>>({});
   const { soundEnabled, enableSound, trigger } = useReadyFeedback();
 
+  // Online-Payment (TWINT) Loading-State
+  const [isTwintPaying, setIsTwintPaying] = useState(false);
+
   // Service Worker registrieren (für Vibration im aktiven Tab)
   useEffect(() => {
     if ('serviceWorker' in navigator) {
@@ -295,7 +298,25 @@ export default function Page() {
   const removeLine = useCallback((id: string) => setCart((prev) => prev.filter((l) => l.id !== id)), []);
   const totalCents = useMemo(() => sumCart(lines), [lines]);
 
-  // Bestellung erstellen
+  // Gemeinsame Folge-Aktionen nach erfolgreichem Order-POST
+  const afterOrderCreated = useCallback((id: string) => {
+    setCart([]);
+    setTab('status');
+    setShowReadyBanner(false);
+    setShowArchive(false);
+    allReadyRef.current = false;
+    setFlashOn(false);
+    setOrderIds((prev) => {
+      const next = [id, ...prev.filter((x) => x !== id)];
+      persistIds(next);
+      return next;
+    });
+    setOrdersById((prev) => ({ ...prev, [id]: null }));
+    notifiedRef.current[id] = false;
+    setCustomerPhone('');
+  }, [persistIds]);
+
+  // Bestellung erstellen (ohne Online-Zahlung – z.B. Barzahlung vor Ort)
   const createOrder = useCallback(async () => {
     if (!cart.length) return;
 
@@ -317,24 +338,67 @@ export default function Page() {
 
     if (r.ok) {
       const { id } = (await r.json()) as { id: string };
-      setCart([]);
-      setTab('status');
-      setShowReadyBanner(false);
-      setShowArchive(false);
-      allReadyRef.current = false;
-      setFlashOn(false);
-      setOrderIds((prev) => {
-        const next = [id, ...prev.filter((x) => x !== id)];
-        persistIds(next);
-        return next;
-      });
-      setOrdersById((prev) => ({ ...prev, [id]: null }));
-      notifiedRef.current[id] = false;
-      setCustomerPhone('');
+      afterOrderCreated(id);
     } else {
       alert('Fehler beim Absenden');
     }
-  }, [cart, totalCents, customerEmail, customerPhone, persistIds]);
+  }, [cart, totalCents, customerEmail, customerPhone, afterOrderCreated]);
+
+  // Bestellung erstellen + TWINT-Zahlung über Payrexx starten
+  const payWithTwint = useCallback(async () => {
+    if (!cart.length) return;
+
+    const payload: {
+      lines: OrderLine[];
+      total_cents: number;
+      customer_email?: string;
+      customer_phone?: string;
+    } = { lines: cart, total_cents: totalCents };
+    if (customerEmail) payload.customer_email = customerEmail;
+    if (customerPhone) payload.customer_phone = customerPhone;
+
+    const r = await fetch('/api/orders', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+      cache: 'no-store',
+    });
+
+    if (!r.ok) {
+      alert('Fehler beim Absenden');
+      return;
+    }
+
+    const { id } = (await r.json()) as { id: string };
+    // gleiche Nachbearbeitung wie bei normaler Bestellung
+    afterOrderCreated(id);
+
+    try {
+      setIsTwintPaying(true);
+      const pr = await fetch('/api/payments/payrexx', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ orderId: id }),
+      });
+      const pj = await pr.json();
+      if (!pr.ok || !pj?.redirectUrl) {
+        console.error('Payrexx error', pj);
+        alert(
+          'Deine Bestellung wurde erstellt, aber die Online-Zahlung konnte nicht gestartet werden. Bitte bezahle vor Ort.'
+        );
+        return;
+      }
+      // Redirect zur sicheren Payrexx / TWINT-Seite
+      window.location.href = pj.redirectUrl as string;
+    } catch (err) {
+      console.error(err);
+      alert(
+        'Deine Bestellung wurde erstellt, aber es gab einen Fehler beim Starten der Online-Zahlung. Bitte bezahle vor Ort.'
+      );
+    } finally {
+      setIsTwintPaying(false);
+    }
+  }, [cart, totalCents, customerEmail, customerPhone, afterOrderCreated]);
 
   // Beim Klick auf ein Gericht: direkt Konfigurator öffnen
   const openCustomize = useCallback((m: MenuItem) => {
@@ -633,10 +697,31 @@ export default function Page() {
                     />
                   </label>
 
+                  {/* Online-Zahlung mit TWINT */}
+                  <div className="space-y-2 pt-1">
+                    <button
+                      className="w-full rounded-full bg-emerald-600 px-4 py-2 text-[13px] font-semibold text-white shadow-sm disabled:opacity-60"
+                      onClick={payWithTwint}
+                      disabled={lines.length === 0 || isTwintPaying}
+                    >
+                      {isTwintPaying ? 'TWINT-Zahlung wird gestartet…' : 'Jetzt mit TWINT bezahlen'}
+                    </button>
+                    <p className="text-center text-[11px] text-neutral-500">
+                      Du wirst zur sicheren TWINT-Zahlungsseite von Payrexx weitergeleitet.
+                    </p>
+                  </div>
+
+                  <div className="flex items-center gap-2 pt-2 text-[11px] text-neutral-400">
+                    <div className="h-px flex-1 bg-neutral-200" />
+                    <span>oder vor Ort bezahlen</span>
+                    <div className="h-px flex-1 bg-neutral-200" />
+                  </div>
+
+                  {/* Bestehende Funktion: Bestellung ohne Online-Zahlung */}
                   <button
-                    className="w-full rounded-full bg-neutral-900 px-4 py-2 text-[13px] font-semibold text-white shadow-sm"
+                    className="w-full rounded-full bg-neutral-900 px-4 py-2 text-[13px] font-semibold text-white shadow-sm disabled:opacity-60"
                     onClick={createOrder}
-                    disabled={lines.length === 0}
+                    disabled={lines.length === 0 || isTwintPaying}
                   >
                     Bestellung abschicken
                   </button>
