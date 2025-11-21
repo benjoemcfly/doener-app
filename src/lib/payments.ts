@@ -3,15 +3,6 @@ import { sql } from '@/lib/db';
 
 export type PaymentStatus = 'unpaid' | 'paid' | 'failed';
 
-export interface OrderPaymentRow {
-  id: string | number;
-  total_cents: number | null;
-  payment_status: string | null;
-  payment_provider: string | null;
-  payment_ref: string | null;
-  currency: string | null;
-}
-
 export interface Order {
   id: string;
   total_cents: number;
@@ -22,11 +13,60 @@ export interface Order {
 }
 
 /**
+ * Struktur der Datenbankzeile (alles erstmal unknown, dann sauber gecastet).
+ * Falls deine Tabelle nicht "orders" heißt: unten im SQL anpassen.
+ */
+type OrderRow = {
+  id?: unknown;
+  total_cents?: unknown;
+  payment_status?: unknown;
+  payment_provider?: unknown;
+  payment_ref?: unknown;
+  currency?: unknown;
+};
+
+function asOrder(row: OrderRow): Order {
+  const id = row.id != null ? String(row.id) : '';
+  const total_cents =
+    typeof row.total_cents === 'number'
+      ? row.total_cents
+      : Number(row.total_cents ?? 0);
+
+  const rawStatus =
+    typeof row.payment_status === 'string' ? row.payment_status : 'unpaid';
+
+  const allowed: PaymentStatus[] = ['unpaid', 'paid', 'failed'];
+  const payment_status = (allowed.includes(rawStatus as PaymentStatus)
+    ? rawStatus
+    : 'unpaid') as PaymentStatus;
+
+  const payment_provider =
+    typeof row.payment_provider === 'string' ? row.payment_provider : null;
+
+  const payment_ref =
+    typeof row.payment_ref === 'string' ? row.payment_ref : null;
+
+  const currency =
+    typeof row.currency === 'string' && row.currency.length > 0
+      ? row.currency
+      : 'CHF';
+
+  return {
+    id,
+    total_cents,
+    payment_status,
+    payment_provider,
+    payment_ref,
+    currency,
+  };
+}
+
+/**
  * Holt eine Order aus der DB.
- * TODO: Falls deine Tabelle nicht "orders" heißt, hier den Namen anpassen.
+ * TODO: Tabellennamen an dein Schema anpassen, falls nötig.
  */
 export async function getOrderById(orderId: string): Promise<Order | null> {
-  const rows = await sql<OrderPaymentRow>`
+  const rowsUnknown = await sql`
     SELECT
       id,
       total_cents,
@@ -39,18 +79,11 @@ export async function getOrderById(orderId: string): Promise<Order | null> {
     LIMIT 1
   `;
 
-  if (rows.length === 0) return null;
+  const rows = rowsUnknown as OrderRow[];
 
-  const row = rows[0];
+  if (!rows.length) return null;
 
-  return {
-    id: String(row.id),
-    total_cents: Number(row.total_cents ?? 0),
-    payment_status: (row.payment_status ?? 'unpaid') as PaymentStatus,
-    payment_provider: row.payment_provider,
-    payment_ref: row.payment_ref,
-    currency: row.currency ?? 'CHF',
-  };
+  return asOrder(rows[0]);
 }
 
 export async function setOrderPaymentRef(orderId: string, ref: string) {

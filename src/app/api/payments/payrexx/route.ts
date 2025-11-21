@@ -1,17 +1,29 @@
-// src/app/api/payments/payrexx/route.ts
+/* eslint-disable @typescript-eslint/no-explicit-any */
+
 import { NextRequest, NextResponse } from 'next/server';
 import { getOrderById, setOrderPaymentRef } from '@/lib/payments';
 
 export const runtime = 'nodejs';
 
-function required(name: string, value: string | undefined | null) {
+function required(name: string, value: string | undefined | null): string {
   if (!value) throw new Error(`Missing ENV ${name}`);
   return value;
 }
 
+type PayrexxGateway = {
+  id?: number | string;
+  link?: string;
+};
+
+type PayrexxGatewayResponse = {
+  data?: PayrexxGateway[];
+};
+
 export async function POST(req: NextRequest) {
   try {
-    const { orderId } = await req.json();
+    const body = (await req.json()) as { orderId?: string };
+    const orderId = body.orderId;
+
     if (!orderId) {
       return NextResponse.json({ error: 'orderId required' }, { status: 400 });
     }
@@ -24,25 +36,39 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'already_paid' }, { status: 409 });
     }
 
-    const INSTANCE = required('PAYREXX_INSTANCE', process.env.PAYREXX_INSTANCE);
+    const INSTANCE = required(
+      'PAYREXX_INSTANCE',
+      process.env.PAYREXX_INSTANCE
+    );
     const API_KEY = required('PAYREXX_API_KEY', process.env.PAYREXX_API_KEY);
     const APP_BASE_URL = required('APP_BASE_URL', process.env.APP_BASE_URL);
 
-    const amount = Math.max(1, Math.round(order.total_cents)); // Rappen/Cents
+    const amount = Math.max(1, Math.round(order.total_cents)); // in Rappen/Cent
 
     const params = new URLSearchParams();
     params.set('amount', String(amount));
     params.set('currency', order.currency || 'CHF');
     params.set('referenceId', order.id);
     params.set('purpose', `Bestellung ${order.id}`);
-    params.set('successRedirectUrl', `${APP_BASE_URL}/checkout/success?order=${order.id}`);
-    params.set('failedRedirectUrl', `${APP_BASE_URL}/checkout/failed?order=${order.id}`);
-    params.set('cancelRedirectUrl', `${APP_BASE_URL}/checkout/cancel?order=${order.id}`);
+    params.set(
+      'successRedirectUrl',
+      `${APP_BASE_URL}/checkout/success?order=${order.id}`
+    );
+    params.set(
+      'failedRedirectUrl',
+      `${APP_BASE_URL}/checkout/failed?order=${order.id}`
+    );
+    params.set(
+      'cancelRedirectUrl',
+      `${APP_BASE_URL}/checkout/cancel?order=${order.id}`
+    );
     // Nur TWINT für den Start
     params.append('paymentMethods[]', 'twint');
 
     const res = await fetch(
-      `https://api.payrexx.com/v1.0/Gateway?instance=${encodeURIComponent(INSTANCE)}`,
+      `https://api.payrexx.com/v1.0/Gateway?instance=${encodeURIComponent(
+        INSTANCE
+      )}`,
       {
         method: 'POST',
         headers: {
@@ -50,7 +76,7 @@ export async function POST(req: NextRequest) {
           'Content-Type': 'application/x-www-form-urlencoded',
         },
         body: params.toString(),
-      },
+      }
     );
 
     if (!res.ok) {
@@ -59,14 +85,18 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'gateway_failed' }, { status: 502 });
     }
 
-    const body = (await res.json()) as any;
-    const gw = body?.data?.[0];
-    const redirectUrl: string | undefined = gw?.link;
-    const gatewayId: string | undefined = gw?.id?.toString();
+    const gwResponse = (await res.json()) as PayrexxGatewayResponse;
+    const gw = gwResponse.data && gwResponse.data[0];
+
+    const redirectUrl = gw?.link;
+    const gatewayId = gw?.id != null ? String(gw.id) : undefined;
 
     if (!redirectUrl || !gatewayId) {
-      console.error('Unexpected Payrexx response', body);
-      return NextResponse.json({ error: 'invalid_gateway_response' }, { status: 502 });
+      console.error('Unexpected Payrexx response', gwResponse);
+      return NextResponse.json(
+        { error: 'invalid_gateway_response' },
+        { status: 502 }
+      );
     }
 
     await setOrderPaymentRef(order.id, gatewayId);
