@@ -1,29 +1,32 @@
 // src/lib/payments.ts
 import { sql } from '@/lib/db';
 
-/**
- * Payment-Status wie im Markt üblich
- * - unpaid: Bestellung angelegt, aber noch nicht bezahlt
- * - paid: Zahlung eingegangen (Webhook)
- * - failed: Zahlung fehlgeschlagen
- */
 export type PaymentStatus = 'unpaid' | 'paid' | 'failed';
+
+export interface OrderPaymentRow {
+  id: string | number;
+  total_cents: number | null;
+  payment_status: string | null;
+  payment_provider: string | null;
+  payment_ref: string | null;
+  currency: string | null;
+}
 
 export interface Order {
   id: string;
-  total_cents: number;           // Gesamtbetrag in Rappen/Cent
+  total_cents: number;
   payment_status: PaymentStatus;
   payment_provider: string | null;
-  payment_ref: string | null;    // z.B. Payrexx-Gateway-ID
+  payment_ref: string | null;
   currency: string | null;
 }
 
 /**
- * TODO: Passe Tabellennamen/Spalten an dein tatsächliches Schema an.
- * Hier gehe ich von einer Tabelle "orders" aus.
+ * Holt eine Order aus der DB.
+ * TODO: Falls deine Tabelle nicht "orders" heißt, hier den Namen anpassen.
  */
 export async function getOrderById(orderId: string): Promise<Order | null> {
-  const rows = (await sql`
+  const rows = await sql<OrderPaymentRow>`
     SELECT
       id,
       total_cents,
@@ -34,17 +37,18 @@ export async function getOrderById(orderId: string): Promise<Order | null> {
     FROM orders
     WHERE id = ${orderId}
     LIMIT 1
-  `) as any[];
+  `;
 
-  if (!rows.length) return null;
+  if (rows.length === 0) return null;
 
   const row = rows[0];
+
   return {
     id: String(row.id),
-    total_cents: Number(row.total_cents),
-    payment_status: (row.payment_status || 'unpaid') as PaymentStatus,
-    payment_provider: row.payment_provider ?? null,
-    payment_ref: row.payment_ref ?? null,
+    total_cents: Number(row.total_cents ?? 0),
+    payment_status: (row.payment_status ?? 'unpaid') as PaymentStatus,
+    payment_provider: row.payment_provider,
+    payment_ref: row.payment_ref,
     currency: row.currency ?? 'CHF',
   };
 }
@@ -52,7 +56,8 @@ export async function getOrderById(orderId: string): Promise<Order | null> {
 export async function setOrderPaymentRef(orderId: string, ref: string) {
   await sql`
     UPDATE orders
-    SET payment_provider = 'payrexx', payment_ref = ${ref}
+    SET payment_provider = 'payrexx',
+        payment_ref = ${ref}
     WHERE id = ${orderId}
   `;
 }
@@ -60,7 +65,9 @@ export async function setOrderPaymentRef(orderId: string, ref: string) {
 export async function markOrderPaid(orderId: string, ref: string) {
   await sql`
     UPDATE orders
-    SET payment_status = 'paid', payment_ref = ${ref}
+    SET payment_status = 'paid',
+        payment_provider = 'payrexx',
+        payment_ref = ${ref}
     WHERE id = ${orderId}
   `;
 }
@@ -68,7 +75,9 @@ export async function markOrderPaid(orderId: string, ref: string) {
 export async function markOrderFailed(orderId: string, ref: string | null) {
   await sql`
     UPDATE orders
-    SET payment_status = 'failed', payment_ref = ${ref}
+    SET payment_status = 'failed',
+        payment_provider = 'payrexx',
+        payment_ref = ${ref}
     WHERE id = ${orderId}
   `;
 }
