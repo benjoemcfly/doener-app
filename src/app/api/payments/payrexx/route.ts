@@ -63,7 +63,7 @@ export async function POST(req: NextRequest) {
       `${APP_BASE_URL}/checkout/cancel?order=${order.id}`
     );
     // Nur TWINT für den Start
-    params.append('paymentMethods[]', 'twint');
+    //params.append('paymentMethods[]', 'twint');
 
     const res = await fetch(
       `https://api.payrexx.com/v1.0/Gateway?instance=${encodeURIComponent(
