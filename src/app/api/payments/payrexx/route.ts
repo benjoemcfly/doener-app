@@ -45,7 +45,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'orderId required' }, { status: 400 });
     }
 
-    // Nur prüfen, dass es die Bestellung gibt und wir einen Betrag haben
+    // Bestellung laden (Minimaldaten)
     const order = await getOrderBasic(orderId);
     if (!order) {
       return NextResponse.json({ error: 'order not found' }, { status: 404 });
@@ -53,6 +53,7 @@ export async function POST(req: NextRequest) {
 
     const totalCents =
       typeof order.total_cents === 'number' ? order.total_cents : 0;
+
     if (totalCents <= 0) {
       return NextResponse.json({ error: 'invalid_amount' }, { status: 400 });
     }
@@ -64,11 +65,11 @@ export async function POST(req: NextRequest) {
     const API_KEY = required('PAYREXX_API_KEY', process.env.PAYREXX_API_KEY);
     const APP_BASE_URL = required('APP_BASE_URL', process.env.APP_BASE_URL);
 
-    const amount = Math.max(1, Math.round(totalCents)); // in Rappen/Cent
+    const amount = Math.max(1, Math.round(totalCents));
 
     const params = new URLSearchParams();
     params.set('amount', String(amount));
-    params.set('currency', 'CHF'); // falls du später Währung speicherst, hier anpassen
+    params.set('currency', 'CHF');
     params.set('referenceId', order.id);
     params.set('purpose', `Bestellung ${order.id}`);
     params.set(
@@ -83,7 +84,8 @@ export async function POST(req: NextRequest) {
       'cancelRedirectUrl',
       `${APP_BASE_URL}/checkout/cancel?order=${order.id}`
     );
-    // TWINT-Zeile momentan weglassen, bis alles stabil läuft:
+
+    // TWINT erst aktivieren, wenn Gateway funktioniert:
     // params.append('paymentMethods[]', 'twint');
 
     const res = await fetch(
@@ -103,7 +105,11 @@ export async function POST(req: NextRequest) {
     if (!res.ok) {
       const text = await res.text();
       console.error('Payrexx Gateway error', res.status, text);
-      return NextResponse.json({ error: 'gateway_failed' }, { status: 502 });
+
+      return NextResponse.json(
+        { error: 'gateway_failed', details: text },
+        { status: 502 }
+      );
     }
 
     const gwResponse = (await res.json()) as PayrexxGatewayResponse;
@@ -114,18 +120,25 @@ export async function POST(req: NextRequest) {
 
     if (!redirectUrl || !gatewayId) {
       console.error('Unexpected Payrexx response', gwResponse);
+
       return NextResponse.json(
-        { error: 'invalid_gateway_response' },
+        { error: 'invalid_gateway_response', data: gwResponse },
         { status: 502 }
       );
     }
 
-    // Für den Prototypen speichern wir gatewayId NICHT in der DB.
-    // (Später können wir das nachrüsten.)
+    // Für den Prototype speichern wir nichts in der DB
 
-    return NextResponse.json({ redirectUrl });
+    return NextResponse.json({ redirectUrl }, { status: 200 });
   } catch (err) {
     console.error('Payrexx session error', err);
-    return NextResponse.json({ error: 'internal_error' }, { status: 500 });
+
+    const message =
+      err instanceof Error ? err.message : JSON.stringify(err);
+
+    return NextResponse.json(
+      { error: 'internal_error', message },
+      { status: 500 }
+    );
   }
 }
