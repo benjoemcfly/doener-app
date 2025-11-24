@@ -1,13 +1,30 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { getOrderById, setOrderPaymentRef } from '@/lib/payments';
+import { sql } from '@/lib/db';
 
 export const runtime = 'nodejs';
 
 function required(name: string, value: string | undefined | null): string {
   if (!value) throw new Error(`Missing ENV ${name}`);
   return value;
+}
+
+type OrderRow = {
+  id: string;
+  total_cents: number | null;
+};
+
+async function getOrderBasic(orderId: string): Promise<OrderRow | null> {
+  const rows = (await sql`
+    SELECT id, total_cents
+    FROM orders
+    WHERE id = ${orderId}
+    LIMIT 1
+  `) as OrderRow[];
+
+  if (!rows.length) return null;
+  return rows[0];
 }
 
 type PayrexxGateway = {
@@ -28,12 +45,16 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'orderId required' }, { status: 400 });
     }
 
-    const order = await getOrderById(orderId);
+    // Nur prüfen, dass es die Bestellung gibt und wir einen Betrag haben
+    const order = await getOrderBasic(orderId);
     if (!order) {
       return NextResponse.json({ error: 'order not found' }, { status: 404 });
     }
-    if (order.payment_status === 'paid') {
-      return NextResponse.json({ error: 'already_paid' }, { status: 409 });
+
+    const totalCents =
+      typeof order.total_cents === 'number' ? order.total_cents : 0;
+    if (totalCents <= 0) {
+      return NextResponse.json({ error: 'invalid_amount' }, { status: 400 });
     }
 
     const INSTANCE = required(
@@ -43,11 +64,11 @@ export async function POST(req: NextRequest) {
     const API_KEY = required('PAYREXX_API_KEY', process.env.PAYREXX_API_KEY);
     const APP_BASE_URL = required('APP_BASE_URL', process.env.APP_BASE_URL);
 
-    const amount = Math.max(1, Math.round(order.total_cents)); // in Rappen/Cent
+    const amount = Math.max(1, Math.round(totalCents)); // in Rappen/Cent
 
     const params = new URLSearchParams();
     params.set('amount', String(amount));
-    params.set('currency', order.currency || 'CHF');
+    params.set('currency', 'CHF'); // falls du später Währung speicherst, hier anpassen
     params.set('referenceId', order.id);
     params.set('purpose', `Bestellung ${order.id}`);
     params.set(
@@ -62,8 +83,8 @@ export async function POST(req: NextRequest) {
       'cancelRedirectUrl',
       `${APP_BASE_URL}/checkout/cancel?order=${order.id}`
     );
-    // Nur TWINT für den Start
-    //params.append('paymentMethods[]', 'twint');
+    // TWINT-Zeile momentan weglassen, bis alles stabil läuft:
+    // params.append('paymentMethods[]', 'twint');
 
     const res = await fetch(
       `https://api.payrexx.com/v1.0/Gateway?instance=${encodeURIComponent(
@@ -99,7 +120,8 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    await setOrderPaymentRef(order.id, gatewayId);
+    // Für den Prototypen speichern wir gatewayId NICHT in der DB.
+    // (Später können wir das nachrüsten.)
 
     return NextResponse.json({ redirectUrl });
   } catch (err) {
