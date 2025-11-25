@@ -45,7 +45,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'orderId required' }, { status: 400 });
     }
 
-    // Bestellung laden (Minimaldaten)
+    // Bestellung minimal laden
     const order = await getOrderBasic(orderId);
     if (!order) {
       return NextResponse.json({ error: 'order not found' }, { status: 404 });
@@ -65,6 +65,7 @@ export async function POST(req: NextRequest) {
     const API_KEY = required('PAYREXX_API_KEY', process.env.PAYREXX_API_KEY);
     const APP_BASE_URL = required('APP_BASE_URL', process.env.APP_BASE_URL);
 
+    // Betrag in Rappen/Cents
     const amount = Math.max(1, Math.round(totalCents));
 
     const params = new URLSearchParams();
@@ -85,7 +86,7 @@ export async function POST(req: NextRequest) {
       `${APP_BASE_URL}/checkout/cancel?order=${order.id}`
     );
 
-    // TWINT erst aktivieren, wenn Gateway funktioniert:
+    // TWINT erst wieder aktivieren, wenn alles stabil läuft:
     // params.append('paymentMethods[]', 'twint');
 
     const res = await fetch(
@@ -95,7 +96,8 @@ export async function POST(req: NextRequest) {
       {
         method: 'POST',
         headers: {
-          Authorization: `Bearer ${API_KEY}`,
+          // WICHTIG: Payrexx erwartet X-API-KEY, NICHT Authorization: Bearer
+          'X-API-KEY': API_KEY,
           'Content-Type': 'application/x-www-form-urlencoded',
         },
         body: params.toString(),
@@ -127,8 +129,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Für den Prototype speichern wir nichts in der DB
-
+    // Prototype: wir speichern gatewayId noch nicht in der DB
     return NextResponse.json({ redirectUrl }, { status: 200 });
   } catch (err) {
     console.error('Payrexx session error', err);
