@@ -64,6 +64,8 @@ export async function POST(req: NextRequest) {
     const API_KEY = required('PAYREXX_API_KEY', process.env.PAYREXX_API_KEY);
     const APP_BASE_URL = required('APP_BASE_URL', process.env.APP_BASE_URL);
 
+    // Payrexx erwartet Betrag in der kleinsten Einheit (Rappen),
+    // deine total_cents sind bereits so gespeichert.
     const amount = Math.max(1, Math.round(totalCents));
 
     const params = new URLSearchParams();
@@ -72,21 +74,22 @@ export async function POST(req: NextRequest) {
     params.set('referenceId', order.id);
     params.set('purpose', `Bestellung ${order.id}`);
 
-    // 👉 Redirects direkt zurück auf deine Hauptseite mit Query-Params
+    // 👉 Redirects direkt zurück auf deine Hauptseite mit Query-Params,
+    //    die von app/page.tsx ausgewertet werden.
     params.set(
       'successRedirectUrl',
-      `${APP_BASE_URL}/?payment=success&order=${order.id}`
+      `${APP_BASE_URL}/?payment=success&order=${encodeURIComponent(order.id)}`
     );
-    params.set(
-      'failedRedirectUrl',
-      `${APP_BASE_URL}/?payment=failed&order=${order.id}`
-    );
-    params.set(
-      'cancelRedirectUrl',
-      `${APP_BASE_URL}/?payment=cancel&order=${order.id}`
-    );
+    // Für Fehler/Abbruch reicht das Flag "failed" – die Order-ID
+    // brauchst du im Frontend nicht mehr, weil der Warenkorb aus
+    // localStorage wiederhergestellt wird.
+    params.set('failedRedirectUrl', `${APP_BASE_URL}/?payment=failed`);
+    params.set('cancelRedirectUrl', `${APP_BASE_URL}/?payment=failed`);
 
-    // TWINT kannst du später wieder explizit setzen:
+    // Überspringt die Payrexx-Ergebnis-Seite und leitet direkt zurück
+    params.set('skipResultPage', 'true');
+
+    // Wenn du zukünftig explizit TWINT erzwingen willst:
     // params.append('paymentMethods[]', 'twint');
 
     const res = await fetch(
@@ -96,7 +99,7 @@ export async function POST(req: NextRequest) {
       {
         method: 'POST',
         headers: {
-          // WICHTIG: Payrexx will X-API-KEY, nicht Authorization: Bearer
+          // Payrexx will X-API-KEY, nicht Authorization: Bearer
           'X-API-KEY': API_KEY,
           'Content-Type': 'application/x-www-form-urlencoded',
         },
