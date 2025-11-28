@@ -2,6 +2,7 @@
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useReadyFeedback } from '@/hooks/useReadyFeedback';
+import { useSearchParams, useRouter } from 'next/navigation';
 
 // ==========================
 // Typen (konsistent halten)
@@ -52,11 +53,61 @@ function baseOptionGroups(opts?: { includeBread?: boolean; limitedSalad?: boolea
   const limitedSalad = opts?.limitedSalad ?? false;
   const groups: OptionGroup[] = [
     includeBread
-      ? { id: 'bread', label: 'Brot', type: 'single', required: true, choices: [ { id: 'fladenbrot', label: 'Fladenbrot' }, { id: 'yufka', label: 'Yufka' } ] }
-      : ({ id: 'base', label: 'Basis', type: 'single', required: true, choices: [{ id: 'box', label: 'Box' }] } as OptionGroup),
-    { id: 'sauce', label: 'Soßen', type: 'multi', choices: [ { id: 'knoblauch', label: 'Knoblauch' }, { id: 'scharf', label: 'Scharf' }, { id: 'cocktail', label: 'Cocktail' }, { id: 'joghurt', label: 'Joghurt' } ] },
-    { id: 'salad', label: 'Salat', type: 'multi', choices: limitedSalad ? [ { id: 'salatmix', label: 'Salatmix' }, { id: 'zwiebeln', label: 'Zwiebeln' } ] : [ { id: 'salatmix', label: 'Salatmix' }, { id: 'tomaten', label: 'Tomaten' }, { id: 'zwiebeln', label: 'Zwiebeln' }, { id: 'gurken', label: 'Gurken' }, { id: 'kraut', label: 'Kraut' } ] },
-    { id: 'spice', label: 'Schärfe', type: 'single', choices: [ { id: 'mild', label: 'Mild' }, { id: 'mittel', label: 'Mittel' }, { id: 'scharf', label: 'Scharf' } ] },
+      ? {
+          id: 'bread',
+          label: 'Brot',
+          type: 'single',
+          required: true,
+          choices: [
+            { id: 'fladenbrot', label: 'Fladenbrot' },
+            { id: 'yufka', label: 'Yufka' },
+          ],
+        }
+      : ({
+          id: 'base',
+          label: 'Basis',
+          type: 'single',
+          required: true,
+          choices: [{ id: 'box', label: 'Box' }],
+        } as OptionGroup),
+    {
+      id: 'sauce',
+      label: 'Soßen',
+      type: 'multi',
+      choices: [
+        { id: 'knoblauch', label: 'Knoblauch' },
+        { id: 'scharf', label: 'Scharf' },
+        { id: 'cocktail', label: 'Cocktail' },
+        { id: 'joghurt', label: 'Joghurt' },
+      ],
+    },
+    {
+      id: 'salad',
+      label: 'Salat',
+      type: 'multi',
+      choices: limitedSalad
+        ? [
+            { id: 'salatmix', label: 'Salatmix' },
+            { id: 'zwiebeln', label: 'Zwiebeln' },
+          ]
+        : [
+            { id: 'salatmix', label: 'Salatmix' },
+            { id: 'tomaten', label: 'Tomaten' },
+            { id: 'zwiebeln', label: 'Zwiebeln' },
+            { id: 'gurken', label: 'Gurken' },
+            { id: 'kraut', label: 'Kraut' },
+          ],
+    },
+    {
+      id: 'spice',
+      label: 'Schärfe',
+      type: 'single',
+      choices: [
+        { id: 'mild', label: 'Mild' },
+        { id: 'mittel', label: 'Mittel' },
+        { id: 'scharf', label: 'Scharf' },
+      ],
+    },
   ];
   return groups;
 }
@@ -109,9 +160,12 @@ const MENU_BY_CATEGORY: Record<Category, MenuItem[]> = {
 function formatPrice(cents: number) {
   return (cents / 100).toLocaleString('de-CH', { style: 'currency', currency: 'CHF', minimumFractionDigits: 2 });
 }
-function sumCart(lines: OrderLine[]) { return lines.reduce((acc, l) => acc + (l.item?.price_cents ?? 0) * l.qty, 0); }
+function sumCart(lines: OrderLine[]) {
+  return lines.reduce((acc, l) => acc + (l.item?.price_cents ?? 0) * l.qty, 0);
+}
 const LS_KEY = 'order_ids_v1';
 const ARCHIVE_LS_KEY = 'order_archive_v1';
+const PENDING_CART_KEY = 'twint_pending_cart_v1';
 const todayStr = () => new Date().toISOString().slice(0, 10);
 
 // ==========================
@@ -120,9 +174,18 @@ const todayStr = () => new Date().toISOString().slice(0, 10);
 const tabs = ['menu', 'checkout', 'status'] as const;
 export type Tab = (typeof tabs)[number];
 
+type PendingCartBackup = {
+  lines: OrderLine[];
+  customerEmail?: string;
+  customerPhone?: string;
+};
+
 export default function Page() {
   const [tab, setTab] = useState<Tab>('menu');
   const [activeCategory, setActiveCategory] = useState<Category>('Döner');
+  const searchParams = useSearchParams();
+  const router = useRouter();
+  const paymentHandledRef = useRef(false);
 
   // Warenkorb
   const [cart, setCart] = useState<OrderLine[]>([]);
@@ -130,7 +193,10 @@ export default function Page() {
   const miniCartRef = useRef<HTMLDivElement | null>(null);
 
   // Abschnitt-Refs (für Scroll-to)
-  const sectionRefs = useRef<Record<Category, HTMLDivElement | null>>({} as Record<Category, HTMLDivElement | null>);
+  const sectionRefs = useRef<Record<Category, HTMLDivElement | null>>({} as Record<
+    Category,
+    HTMLDivElement | null
+  >);
 
   // Customize-Modal
   const [customizing, setCustomizing] = useState<{ item: MenuItem; specs: Record<string, string[]> } | null>(null);
@@ -196,10 +262,14 @@ export default function Page() {
   }, []);
 
   const persistIds = useCallback((ids: string[]) => {
-    try { localStorage.setItem(LS_KEY, JSON.stringify(ids)); } catch {}
+    try {
+      localStorage.setItem(LS_KEY, JSON.stringify(ids));
+    } catch {}
   }, []);
   const persistArchive = useCallback((ids: string[], byId: Record<string, Order>) => {
-    try { localStorage.setItem(ARCHIVE_LS_KEY, JSON.stringify({ date: todayStr(), ids, byId })); } catch {}
+    try {
+      localStorage.setItem(ARCHIVE_LS_KEY, JSON.stringify({ date: todayStr(), ids, byId }));
+    } catch {}
   }, []);
 
   // Polling aller bekannten Orders (alle 5s)
@@ -220,7 +290,12 @@ export default function Page() {
           if (o.status === 'ready' && !notifiedRef.current[id]) {
             notifiedRef.current[id] = true;
             trigger();
-            try { navigator.serviceWorker?.controller?.postMessage({ type: 'VIBRATE', body: 'Eine Bestellung ist abholbereit!' }); } catch {}
+            try {
+              navigator.serviceWorker?.controller?.postMessage({
+                type: 'VIBRATE',
+                body: 'Eine Bestellung ist abholbereit!',
+              });
+            } catch {}
             setBannerText('Eine Bestellung ist abholbereit');
             setShowReadyBanner(true);
             setFlashMs(1500);
@@ -262,7 +337,8 @@ export default function Page() {
           });
         }
 
-        const allKnown = orderIds.length > 0 && orderIds.every((id) => merged[id]?.status === 'ready');
+        const allKnown =
+          orderIds.length > 0 && orderIds.every((id) => merged[id]?.status === 'ready');
         if (allKnown && !allReadyRef.current) {
           allReadyRef.current = true;
           setBannerText('Alle Bestellungen sind abholbereit');
@@ -281,40 +357,60 @@ export default function Page() {
 
     fetchAll();
     const t = setInterval(fetchAll, 5000);
-    return () => { stopped = true; clearInterval(t); };
+    return () => {
+      stopped = true;
+      clearInterval(t);
+    };
   }, [orderIds, trigger, persistIds, persistArchive]);
 
   // Cart helpers
   const addToCart = useCallback((mi: MenuItem, specs?: Record<string, string[]>) => {
     setCart((prev) => {
-      const next = [...prev, { id: crypto.randomUUID(), item: mi, qty: 1, specs: specs ?? {}, note: '' }];
-      queueMicrotask(() => miniCartRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }));
+      const next = [
+        ...prev,
+        { id: crypto.randomUUID(), item: mi, qty: 1, specs: specs ?? {}, note: '' },
+      ];
+      queueMicrotask(() =>
+        miniCartRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }),
+      );
       return next;
     });
   }, []);
   const adjustQty = useCallback((id: string, delta: number) => {
-    setCart((prev) => prev.map((l) => (l.id === id ? { ...l, qty: Math.max(0, l.qty + delta) } : l)).filter((l) => l.qty > 0));
+    setCart((prev) =>
+      prev
+        .map((l) =>
+          l.id === id ? { ...l, qty: Math.max(0, l.qty + delta) } : l,
+        )
+        .filter((l) => l.qty > 0),
+    );
   }, []);
-  const removeLine = useCallback((id: string) => setCart((prev) => prev.filter((l) => l.id !== id)), []);
+  const removeLine = useCallback(
+    (id: string) => setCart((prev) => prev.filter((l) => l.id !== id)),
+    [],
+  );
   const totalCents = useMemo(() => sumCart(lines), [lines]);
 
   // Gemeinsame Folge-Aktionen nach erfolgreichem Order-POST
-  const afterOrderCreated = useCallback((id: string) => {
-    setCart([]);
-    setTab('status');
-    setShowReadyBanner(false);
-    setShowArchive(false);
-    allReadyRef.current = false;
-    setFlashOn(false);
-    setOrderIds((prev) => {
-      const next = [id, ...prev.filter((x) => x !== id)];
-      persistIds(next);
-      return next;
-    });
-    setOrdersById((prev) => ({ ...prev, [id]: null }));
-    notifiedRef.current[id] = false;
-    setCustomerPhone('');
-  }, [persistIds]);
+  const afterOrderCreated = useCallback(
+    (id: string) => {
+      setCart([]);
+      setTab('status');
+      setShowReadyBanner(false);
+      setShowArchive(false);
+      allReadyRef.current = false;
+      setFlashOn(false);
+      setOrderIds((prev) => {
+        const next = [id, ...prev.filter((x) => x !== id)];
+        persistIds(next);
+        return next;
+      });
+      setOrdersById((prev) => ({ ...prev, [id]: null }));
+      notifiedRef.current[id] = false;
+      setCustomerPhone('');
+    },
+    [persistIds],
+  );
 
   // Bestellung erstellen (ohne Online-Zahlung – z.B. Barzahlung vor Ort)
   const createOrder = useCallback(async () => {
@@ -348,6 +444,16 @@ export default function Page() {
   const payWithTwint = useCallback(async () => {
     if (!cart.length) return;
 
+    // Warenkorb + Kontaktdaten sichern, damit wir sie bei fehlgeschlagener Zahlung wiederherstellen können
+    const backup: PendingCartBackup = {
+      lines: cart,
+      customerEmail: customerEmail || undefined,
+      customerPhone: customerPhone || undefined,
+    };
+    try {
+      localStorage.setItem(PENDING_CART_KEY, JSON.stringify(backup));
+    } catch {}
+
     const payload: {
       lines: OrderLine[];
       total_cents: number;
@@ -370,8 +476,6 @@ export default function Page() {
     }
 
     const { id } = (await r.json()) as { id: string };
-    // gleiche Nachbearbeitung wie bei normaler Bestellung
-    afterOrderCreated(id);
 
     try {
       setIsTwintPaying(true);
@@ -384,8 +488,13 @@ export default function Page() {
       if (!pr.ok || !pj?.redirectUrl) {
         console.error('Payrexx error', pj);
         alert(
-          'Deine Bestellung wurde erstellt, aber die Online-Zahlung konnte nicht gestartet werden. Bitte bezahle vor Ort.'
+          'Deine Bestellung wurde erstellt, aber die Online-Zahlung konnte nicht gestartet werden. Bitte bezahle vor Ort.',
         );
+        // in diesem Fall behandeln wir es wie eine normale Bestellung
+        afterOrderCreated(id);
+        try {
+          localStorage.removeItem(PENDING_CART_KEY);
+        } catch {}
         return;
       }
       // Redirect zur sicheren Payrexx / TWINT-Seite
@@ -393,17 +502,65 @@ export default function Page() {
     } catch (err) {
       console.error(err);
       alert(
-        'Deine Bestellung wurde erstellt, aber es gab einen Fehler beim Starten der Online-Zahlung. Bitte bezahle vor Ort.'
+        'Deine Bestellung wurde erstellt, aber es gab einen Fehler beim Starten der Online-Zahlung. Bitte bezahle vor Ort.',
       );
+      afterOrderCreated(id);
+      try {
+        localStorage.removeItem(PENDING_CART_KEY);
+      } catch {}
     } finally {
       setIsTwintPaying(false);
     }
   }, [cart, totalCents, customerEmail, customerPhone, afterOrderCreated]);
 
+  // Rückkehr von der Payrexx/TWINT-Seite auswerten
+  useEffect(() => {
+    const payment = searchParams.get('payment');
+    const orderId = searchParams.get('order');
+
+    if (!payment || paymentHandledRef.current) return;
+    paymentHandledRef.current = true;
+
+    // URL aufräumen (payment/order aus Query entfernen)
+    router.replace('/');
+
+    if (payment === 'success') {
+      // Erfolg → Order in den Status-Tab übernehmen
+      if (orderId) {
+        afterOrderCreated(orderId);
+      }
+      try {
+        localStorage.removeItem(PENDING_CART_KEY);
+      } catch {}
+      setTab('status');
+    } else {
+      // Fehlgeschlagen / abgebrochen → alten Warenkorb wiederherstellen
+      try {
+        const raw = localStorage.getItem(PENDING_CART_KEY);
+        if (raw) {
+          const backup = JSON.parse(raw) as PendingCartBackup;
+          setCart(backup.lines || []);
+          setCustomerEmail(backup.customerEmail || '');
+          setCustomerPhone(backup.customerPhone || '');
+        }
+      } catch {}
+
+      try {
+        localStorage.removeItem(PENDING_CART_KEY);
+      } catch {}
+
+      setTab('checkout');
+      alert(
+        'Die TWINT-Zahlung wurde abgebrochen oder war nicht erfolgreich. Dein Warenkorb wurde wiederhergestellt.',
+      );
+    }
+  }, [searchParams, router, afterOrderCreated]);
+
   // Beim Klick auf ein Gericht: direkt Konfigurator öffnen
   const openCustomize = useCallback((m: MenuItem) => {
     const initialSpecs = (m.options || []).reduce<Record<string, string[]>>((acc, g) => {
-      acc[g.id] = g.type === 'single' && g.required && g.choices.length > 0 ? [g.choices[0].id] : [];
+      acc[g.id] =
+        g.type === 'single' && g.required && g.choices.length > 0 ? [g.choices[0].id] : [];
       return acc;
     }, {});
     setCustomizing({ item: m, specs: initialSpecs });
@@ -416,7 +573,7 @@ export default function Page() {
     if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }, []);
 
-  // 🔥 NEU: Scroll-Sync für die Kategorien-Leiste (IntersectionObserver)
+  // 🔥 Scroll-Sync für die Kategorien-Leiste (IntersectionObserver)
   useEffect(() => {
     const observer = new IntersectionObserver(
       (entries) => {
@@ -443,7 +600,7 @@ export default function Page() {
       {
         threshold: 0.4,
         rootMargin: '-140px 0px 0px 0px', // berücksichtigt Header + Kategorie-Leiste
-      }
+      },
     );
 
     (CATEGORY_TABS as readonly Category[]).forEach((cat) => {
@@ -469,9 +626,13 @@ export default function Page() {
         <div className="mx-auto max-w-5xl px-4">
           <div className="flex h-16 items-center justify-between">
             <div className="flex items-center gap-3">
-              <div className="grid h-9 w-9 place-items-center rounded-xl bg-emerald-600 text-white shadow-sm ring-1 ring-emerald-700/20">🥙</div>
+              <div className="grid h-9 w-9 place-items-center rounded-xl bg-emerald-600 text-white shadow-sm ring-1 ring-emerald-700/20">
+                🥙
+              </div>
               <div className="leading-tight">
-                <div className="text-[15px] font-semibold tracking-[-0.015em]">Döner Self-Ordering</div>
+                <div className="text-[15px] font-semibold tracking-[-0.015em]">
+                  Döner Self-Ordering
+                </div>
                 <div className="text-[11px] text-neutral-500">Jetzt • 10–20 Min</div>
               </div>
             </div>
@@ -479,7 +640,9 @@ export default function Page() {
               <button
                 onClick={enableSound}
                 className={`rounded-full px-3 py-2 text-xs shadow-sm ring-1 ${
-                  soundEnabled ? 'bg-emerald-50 text-emerald-700 ring-emerald-600/20' : 'bg-black text-white ring-black/10'
+                  soundEnabled
+                    ? 'bg-emerald-50 text-emerald-700 ring-emerald-600/20'
+                    : 'bg-black text-white ring-black/10'
                 }`}
               >
                 {soundEnabled ? '🔔 Ton aktiv' : '🔔 Ton aktivieren'}
@@ -618,11 +781,16 @@ export default function Page() {
           <section className="pb-28">
             <h2 className="text-[18px] font-semibold tracking-[-0.02em]">Warenkorb</h2>
             {lines.length === 0 ? (
-              <p className="mt-3 text-[13px] text-neutral-500">Dein Warenkorb ist leer.</p>
+              <p className="mt-3 text-[13px] text-neutral-500">
+                Dein Warenkorb ist leer.
+              </p>
             ) : (
               <div className="mt-3 space-y-3">
                 {lines.map((l) => (
-                  <div key={l.id} className="rounded-3xl bg-white p-3 shadow-sm ring-1 ring-black/5">
+                  <div
+                    key={l.id}
+                    className="rounded-3xl bg-white p-3 shadow-sm ring-1 ring-black/5"
+                  >
                     <div className="flex items-start justify-between gap-3">
                       <div>
                         <div className="font-medium">{l.item?.name}</div>
@@ -633,7 +801,11 @@ export default function Page() {
                                 <span className="font-medium">
                                   {labelForGroup(gid, l.item)}:
                                 </span>{' '}
-                                {arr.map((cid) => labelForChoice(gid, cid, l.item)).join(', ')}
+                                {arr
+                                  .map((cid) =>
+                                    labelForChoice(gid, cid, l.item),
+                                  )
+                                  .join(', ')}
                               </li>
                             ))}
                           </ul>
@@ -671,7 +843,9 @@ export default function Page() {
 
                 <div className="flex items-center justify-between rounded-3xl bg-white p-3 shadow-sm ring-1 ring-black/5">
                   <div className="text-[13px]">Zwischensumme</div>
-                  <div className="text-[15px] font-semibold">{formatPrice(totalCents)}</div>
+                  <div className="text-[15px] font-semibold">
+                    {formatPrice(totalCents)}
+                  </div>
                 </div>
 
                 <div className="space-y-3 rounded-3xl bg-white p-3 shadow-sm ring-1 ring-black/5">
@@ -704,10 +878,13 @@ export default function Page() {
                       onClick={payWithTwint}
                       disabled={lines.length === 0 || isTwintPaying}
                     >
-                      {isTwintPaying ? 'TWINT-Zahlung wird gestartet…' : 'Jetzt mit TWINT bezahlen'}
+                      {isTwintPaying
+                        ? 'TWINT-Zahlung wird gestartet…'
+                        : 'Jetzt mit TWINT bezahlen'}
                     </button>
                     <p className="text-center text-[11px] text-neutral-500">
-                      Du wirst zur sicheren TWINT-Zahlungsseite von Payrexx weitergeleitet.
+                      Du wirst zur sicheren TWINT-Zahlungsseite von Payrexx
+                      weitergeleitet.
                     </p>
                   </div>
 
@@ -734,9 +911,13 @@ export default function Page() {
         {/* === STATUS === */}
         {tab === 'status' && (
           <section className="pb-28">
-            <h2 className="text-[18px] font-semibold tracking-[-0.02em]">Bestellstatus</h2>
+            <h2 className="text-[18px] font-semibold tracking-[-0.02em]">
+              Bestellstatus
+            </h2>
             {orderIds.length === 0 ? (
-              <p className="mt-3 text-[13px] text-neutral-500">Keine aktiven Bestellungen.</p>
+              <p className="mt-3 text-[13px] text-neutral-500">
+                Keine aktiven Bestellungen.
+              </p>
             ) : (
               <div className="mt-3 space-y-3">
                 {orderIds.map((id) => {
@@ -753,7 +934,9 @@ export default function Page() {
                         <StatusBadge s={o?.status ?? 'in_queue'} />
                       </div>
                       {!o ? (
-                        <p className="mt-2 text-[13px] text-neutral-500">Lade Status…</p>
+                        <p className="mt-2 text-[13px] text-neutral-500">
+                          Lade Status…
+                        </p>
                       ) : (
                         <>
                           <ul className="mt-3 divide-y text-[13px]">
@@ -766,23 +949,31 @@ export default function Page() {
                                   {l.qty}× {l.item?.name}
                                   {l.specs && Object.keys(l.specs).length > 0 && (
                                     <div className="text-[12px] text-neutral-600">
-                                      {Object.entries(l.specs).map(([gid, arr]) => (
-                                        <span key={gid} className="mr-2">
-                                          <span className="font-medium">
-                                            {labelForGroup(gid, l.item)}:
-                                          </span>{' '}
-                                          {arr
-                                            .map((cid) =>
-                                              labelForChoice(gid, cid, l.item)
-                                            )
-                                            .join(', ')}
-                                        </span>
-                                      ))}
+                                      {Object.entries(l.specs).map(
+                                        ([gid, arr]) => (
+                                          <span key={gid} className="mr-2">
+                                            <span className="font-medium">
+                                              {labelForGroup(gid, l.item)}:
+                                            </span>{' '}
+                                            {arr
+                                              .map((cid) =>
+                                                labelForChoice(
+                                                  gid,
+                                                  cid,
+                                                  l.item,
+                                                ),
+                                              )
+                                              .join(', ')}
+                                          </span>
+                                        ),
+                                      )}
                                     </div>
                                   )}
                                 </div>
                                 <div className="text-neutral-500">
-                                  {formatPrice((l.item?.price_cents ?? 0) * l.qty)}
+                                  {formatPrice(
+                                    (l.item?.price_cents ?? 0) * l.qty,
+                                  )}
                                 </div>
                               </li>
                             ))}
@@ -790,7 +981,7 @@ export default function Page() {
                           <div className="mt-2 text-right text-[11px] text-neutral-500">
                             aktualisiert:{' '}
                             {new Date(
-                              o.updated_at || o.created_at || ''
+                              o.updated_at || o.created_at || '',
                             ).toLocaleString()}
                           </div>
                         </>
@@ -849,7 +1040,9 @@ export default function Page() {
                                 {l.qty}× {l.item?.name}
                               </div>
                               <div className="text-neutral-500">
-                                {formatPrice((l.item?.price_cents ?? 0) * l.qty)}
+                                {formatPrice(
+                                  (l.item?.price_cents ?? 0) * l.qty,
+                                )}
                               </div>
                             </li>
                           ))}
@@ -857,7 +1050,7 @@ export default function Page() {
                         <div className="mt-2 text-right text-[11px] text-neutral-400">
                           abgeschlossen:{' '}
                           {new Date(
-                            o.updated_at || o.created_at || ''
+                            o.updated_at || o.created_at || '',
                           ).toLocaleString()}
                         </div>
                       </div>
@@ -1048,9 +1241,9 @@ function CustomizeCard({
   const canConfirm = useMemo(
     () =>
       (item.options || []).every(
-        (g) => !g.required || (specs[g.id]?.length ?? 0) > 0
+        (g) => !g.required || (specs[g.id]?.length ?? 0) > 0,
       ),
-    [item.options, specs]
+    [item.options, specs],
   );
   return (
     <div>

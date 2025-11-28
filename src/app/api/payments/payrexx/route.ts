@@ -45,7 +45,6 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'orderId required' }, { status: 400 });
     }
 
-    // Bestellung minimal laden
     const order = await getOrderBasic(orderId);
     if (!order) {
       return NextResponse.json({ error: 'order not found' }, { status: 404 });
@@ -65,7 +64,6 @@ export async function POST(req: NextRequest) {
     const API_KEY = required('PAYREXX_API_KEY', process.env.PAYREXX_API_KEY);
     const APP_BASE_URL = required('APP_BASE_URL', process.env.APP_BASE_URL);
 
-    // Betrag in Rappen/Cents
     const amount = Math.max(1, Math.round(totalCents));
 
     const params = new URLSearchParams();
@@ -73,20 +71,22 @@ export async function POST(req: NextRequest) {
     params.set('currency', 'CHF');
     params.set('referenceId', order.id);
     params.set('purpose', `Bestellung ${order.id}`);
+
+    // 👉 Redirects direkt zurück auf deine Hauptseite mit Query-Params
     params.set(
       'successRedirectUrl',
-      `${APP_BASE_URL}/checkout/success?order=${order.id}`
+      `${APP_BASE_URL}/?payment=success&order=${order.id}`
     );
     params.set(
       'failedRedirectUrl',
-      `${APP_BASE_URL}/checkout/failed?order=${order.id}`
+      `${APP_BASE_URL}/?payment=failed&order=${order.id}`
     );
     params.set(
       'cancelRedirectUrl',
-      `${APP_BASE_URL}/checkout/cancel?order=${order.id}`
+      `${APP_BASE_URL}/?payment=cancel&order=${order.id}`
     );
 
-    // TWINT erst wieder aktivieren, wenn alles stabil läuft:
+    // TWINT kannst du später wieder explizit setzen:
     // params.append('paymentMethods[]', 'twint');
 
     const res = await fetch(
@@ -96,7 +96,7 @@ export async function POST(req: NextRequest) {
       {
         method: 'POST',
         headers: {
-          // WICHTIG: Payrexx erwartet X-API-KEY, NICHT Authorization: Bearer
+          // WICHTIG: Payrexx will X-API-KEY, nicht Authorization: Bearer
           'X-API-KEY': API_KEY,
           'Content-Type': 'application/x-www-form-urlencoded',
         },
@@ -129,7 +129,6 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Prototype: wir speichern gatewayId noch nicht in der DB
     return NextResponse.json({ redirectUrl }, { status: 200 });
   } catch (err) {
     console.error('Payrexx session error', err);
