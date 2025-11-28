@@ -2,7 +2,6 @@
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useReadyFeedback } from '@/hooks/useReadyFeedback';
-import { useSearchParams, useRouter } from 'next/navigation';
 
 // ==========================
 // Typen (konsistent halten)
@@ -183,8 +182,6 @@ type PendingCartBackup = {
 export default function Page() {
   const [tab, setTab] = useState<Tab>('menu');
   const [activeCategory, setActiveCategory] = useState<Category>('Döner');
-  const searchParams = useSearchParams();
-  const router = useRouter();
   const paymentHandledRef = useRef(false);
 
   // Warenkorb
@@ -513,19 +510,24 @@ export default function Page() {
     }
   }, [cart, totalCents, customerEmail, customerPhone, afterOrderCreated]);
 
-  // Rückkehr von der Payrexx/TWINT-Seite auswerten
+  // Rückkehr von der Payrexx/TWINT-Seite auswerten (ohne useSearchParams)
   useEffect(() => {
-    const payment = searchParams.get('payment');
-    const orderId = searchParams.get('order');
+    if (typeof window === 'undefined') return;
+    if (paymentHandledRef.current) return;
 
-    if (!payment || paymentHandledRef.current) return;
+    const url = new URL(window.location.href);
+    const payment = url.searchParams.get('payment');
+    const orderId = url.searchParams.get('order');
+
+    if (!payment) return;
     paymentHandledRef.current = true;
 
     // URL aufräumen (payment/order aus Query entfernen)
-    router.replace('/');
+    url.searchParams.delete('payment');
+    url.searchParams.delete('order');
+    window.history.replaceState(null, '', url.toString());
 
     if (payment === 'success') {
-      // Erfolg → Order in den Status-Tab übernehmen
       if (orderId) {
         afterOrderCreated(orderId);
       }
@@ -554,7 +556,7 @@ export default function Page() {
         'Die TWINT-Zahlung wurde abgebrochen oder war nicht erfolgreich. Dein Warenkorb wurde wiederhergestellt.',
       );
     }
-  }, [searchParams, router, afterOrderCreated]);
+  }, [afterOrderCreated]);
 
   // Beim Klick auf ein Gericht: direkt Konfigurator öffnen
   const openCustomize = useCallback((m: MenuItem) => {
@@ -573,7 +575,7 @@ export default function Page() {
     if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }, []);
 
-  // 🔥 Scroll-Sync für die Kategorien-Leiste (IntersectionObserver)
+  // Scroll-Sync für die Kategorien-Leiste (IntersectionObserver)
   useEffect(() => {
     const observer = new IntersectionObserver(
       (entries) => {
@@ -612,7 +614,7 @@ export default function Page() {
   }, []);
 
   // ==========================
-  // UI (Uber-ähnlicher Look) – fortlaufende Seite
+  // UI
   // ==========================
   const itemCount = useMemo(() => lines.reduce((a, l) => a + l.qty, 0), [lines]);
 
@@ -663,7 +665,7 @@ export default function Page() {
           </div>
         </div>
 
-        {/* Fixierte Kategorien-Leiste unterhalb der Top-Bar */}
+        {/* Fixierte Kategorien-Leiste */}
         <div className="border-t border-neutral-100 bg-white/95">
           <nav className="mx-auto flex max-w-5xl items-center gap-2 overflow-x-auto px-4 pb-1 pt-2 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
             {(CATEGORY_TABS as readonly Category[]).map((c) => (
@@ -687,7 +689,7 @@ export default function Page() {
       </header>
 
       <main className="mx-auto max-w-5xl px-4">
-        {/* === MENU: fortlaufend über alle Kategorien === */}
+        {/* MENU */}
         {tab === 'menu' && (
           <section className="pb-28">
             {(CATEGORY_TABS as readonly Category[]).map((cat) => (
@@ -699,12 +701,10 @@ export default function Page() {
                 data-cat={cat}
                 className="scroll-mt-32"
               >
-                {/* Kategorietitel */}
                 <h2 className="mt-6 text-[22px] font-semibold tracking-[-0.02em] text-neutral-900">
                   {cat}
                 </h2>
 
-                {/* Cards */}
                 <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
                   {MENU_BY_CATEGORY[cat].map((m) => (
                     <article
@@ -712,7 +712,6 @@ export default function Page() {
                       className="group rounded-3xl bg-white shadow-sm ring-1 ring-black/5 transition hover:shadow-md"
                     >
                       <div className="grid grid-cols-[1fr_140px] items-center gap-4 p-4">
-                        {/* Textspalte */}
                         <div>
                           <h3 className="text-[15px] font-semibold leading-tight tracking-[-0.015em] text-neutral-900">
                             {m.name}
@@ -742,7 +741,7 @@ export default function Page() {
                             )}
                           </div>
                         </div>
-                        {/* Bild/Emoji-Spalte mit + Button */}
+
                         <div className="relative h-28 w-full select-none">
                           <div className="absolute inset-0 rounded-2xl bg-neutral-100/80 ring-1 ring-inset ring-neutral-200/80" />
                           <div className="absolute inset-0 grid place-items-center text-5xl">
@@ -763,7 +762,6 @@ export default function Page() {
               </div>
             ))}
 
-            {/* Mini-Warenkorb */}
             <div ref={miniCartRef} className="mt-6">
               <MiniCart
                 lines={lines}
@@ -776,7 +774,7 @@ export default function Page() {
           </section>
         )}
 
-        {/* === CHECKOUT === */}
+        {/* CHECKOUT */}
         {tab === 'checkout' && (
           <section className="pb-28">
             <h2 className="text-[18px] font-semibold tracking-[-0.02em]">Warenkorb</h2>
@@ -871,7 +869,6 @@ export default function Page() {
                     />
                   </label>
 
-                  {/* Online-Zahlung mit TWINT */}
                   <div className="space-y-2 pt-1">
                     <button
                       className="w-full rounded-full bg-emerald-600 px-4 py-2 text-[13px] font-semibold text-white shadow-sm disabled:opacity-60"
@@ -894,7 +891,6 @@ export default function Page() {
                     <div className="h-px flex-1 bg-neutral-200" />
                   </div>
 
-                  {/* Bestehende Funktion: Bestellung ohne Online-Zahlung */}
                   <button
                     className="w-full rounded-full bg-neutral-900 px-4 py-2 text-[13px] font-semibold text-white shadow-sm disabled:opacity-60"
                     onClick={createOrder}
@@ -908,7 +904,7 @@ export default function Page() {
           </section>
         )}
 
-        {/* === STATUS === */}
+        {/* STATUS */}
         {tab === 'status' && (
           <section className="pb-28">
             <h2 className="text-[18px] font-semibold tracking-[-0.02em]">
@@ -992,7 +988,6 @@ export default function Page() {
               </div>
             )}
 
-            {/* Archiv-Link */}
             <div className="mt-3 text-center text-[12px] text-neutral-500">
               <button
                 className="rounded-full px-3 py-1 underline-offset-2 hover:underline"
@@ -1063,7 +1058,7 @@ export default function Page() {
         )}
       </main>
 
-      {/* Sticky Bottom Cart-Bar (nur im Menü) */}
+      {/* Sticky Bottom Cart-Bar */}
       <div className="pointer-events-none fixed inset-x-0 bottom-16 z-40 mx-auto max-w-5xl px-4 sm:bottom-20">
         {itemCount > 0 && tab === 'menu' && (
           <div className="pointer-events-auto flex items-center justify-between gap-3 rounded-full bg-neutral-900 px-4 py-3 text-white shadow-lg ring-1 ring-black/10">
@@ -1305,7 +1300,6 @@ function CustomizeCard({
   );
 }
 
-// Mini-Warenkorb
 function MiniCart({
   lines,
   totalCents,
