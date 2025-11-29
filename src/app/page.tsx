@@ -711,32 +711,49 @@ export default function Page() {
     afterOrderCreated,
   ]);
 
-  // Rückkehr von der Payrexx/TWINT-Seite: Tab setzen + ggf. Warenkorb wiederherstellen
+// DEBUG + Handling: Rückkehr von der Payrexx/TWINT-Seite
 useEffect(() => {
-  if (typeof window === 'undefined') return;
+  // 1. Läuft der Effect überhaupt?
+  console.log('[payment-effect] mounted');
+
+  if (typeof window === 'undefined') {
+    console.log('[payment-effect] window is undefined (SSR)');
+    return;
+  }
+
+  const search = window.location.search;
+  console.log('[payment-effect] location.search =', search);
 
   try {
-    const params = new URLSearchParams(window.location.search);
+    const params = new URLSearchParams(search);
     const payment = params.get('payment');
-    if (!payment) return;
+    const order = params.get('order');
+    console.log('[payment-effect] payment =', payment, 'order =', order);
 
-    // URL ohne Query-Parameter (für Reload etc.)
+    if (!payment) {
+      console.log('[payment-effect] no "payment" param -> nothing to do');
+      return;
+    }
+
+    // URL aufräumen (Query entfernen, damit ein Reload sauber ist)
     const cleanUrl = window.location.origin + window.location.pathname;
     window.history.replaceState(null, '', cleanUrl);
+    console.log('[payment-effect] cleaned URL to', cleanUrl);
 
     if (payment === 'success') {
-      // erfolgreiche Zahlung -> wir wollen direkt den Status-Tab
+      console.log('[payment-effect] setting tab -> status');
+      setTab('status');
       try {
         localStorage.removeItem(PENDING_CART_KEY);
-      } catch {
-        // ignorieren
+      } catch (e) {
+        console.warn('[payment-effect] remove PENDING_CART_KEY failed', e);
       }
-      setTab('status');
     } else {
-      // fehlgeschlagene / abgebrochene Zahlung -> Kasse + Warenkorb wiederherstellen
+      console.log('[payment-effect] payment != success -> go to checkout');
       let restored = false;
       try {
         const raw = localStorage.getItem(PENDING_CART_KEY);
+        console.log('[payment-effect] PENDING_CART raw =', raw);
         if (raw) {
           const backup = JSON.parse(raw) as PendingCartBackup;
           setCart(backup.lines || []);
@@ -745,8 +762,8 @@ useEffect(() => {
           restored = true;
         }
         localStorage.removeItem(PENDING_CART_KEY);
-      } catch {
-        // ignorieren
+      } catch (e) {
+        console.error('[payment-effect] error restoring cart', e);
       }
 
       setTab('checkout');
@@ -761,9 +778,10 @@ useEffect(() => {
       }
     }
   } catch (e) {
-    console.error('Error handling payment redirect', e);
+    console.error('[payment-effect] outer error', e);
   }
 }, []);
+
 
 
   // Beim Klick auf ein Gericht: direkt Konfigurator öffnen
