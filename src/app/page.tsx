@@ -711,59 +711,30 @@ export default function Page() {
     afterOrderCreated,
   ]);
 
-  // Rückkehr von der Payrexx/TWINT-Seite auswerten
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    if (paymentHandledRef.current) return;
+  // Rückkehr von der Payrexx/TWINT-Seite: einfachen Tab-Switch basierend auf ?payment=
+useEffect(() => {
+  if (typeof window === 'undefined') return;
 
-    const url = new URL(window.location.href);
-    const payment = url.searchParams.get('payment');
-
+  try {
+    const params = new URLSearchParams(window.location.search);
+    const payment = params.get('payment');
     if (!payment) return;
-    paymentHandledRef.current = true;
 
-    // URL säubern
-    url.searchParams.delete('payment');
-    url.searchParams.delete('order');
-    window.history.replaceState(null, '', url.toString());
+    // URL aufräumen (Query entfernen, damit ein Reload sauber ist)
+    const cleanUrl = window.location.origin + window.location.pathname;
+    window.history.replaceState(null, '', cleanUrl);
 
     if (payment === 'success') {
-      // Bestellung ist bereits angelegt, wir zeigen nur den Status
-      try {
-        localStorage.removeItem(PENDING_CART_KEY);
-      } catch {}
+      // nach erfolgreicher Zahlung direkt auf Status-Tab
       setTab('status');
     } else {
-      // fehlgeschlagen / abgebrochen → Warenkorb wiederherstellen
-      let restored = false;
-      try {
-        const raw = localStorage.getItem(PENDING_CART_KEY);
-        if (raw) {
-          const backup = JSON.parse(
-            raw,
-          ) as PendingCartBackup;
-          setCart(backup.lines || []);
-          setCustomerEmail(backup.customerEmail || '');
-          setCustomerPhone(backup.customerPhone || '');
-          restored = true;
-        }
-        localStorage.removeItem(PENDING_CART_KEY);
-      } catch {
-        // ignore
-      }
-
+      // bei abgebrochener/fehlgeschlagener Zahlung auf Kasse
       setTab('checkout');
-      if (restored) {
-        alert(
-          'Die TWINT-Zahlung wurde abgebrochen oder war nicht erfolgreich. Dein Warenkorb wurde wiederhergestellt.',
-        );
-      } else {
-        alert(
-          'Die TWINT-Zahlung wurde abgebrochen oder war nicht erfolgreich.',
-        );
-      }
     }
-  }, []);
+  } catch (e) {
+    console.error('Error handling payment redirect', e);
+  }
+}, []);
 
   // Beim Klick auf ein Gericht: direkt Konfigurator öffnen
   const openCustomize = useCallback((m: MenuItem) => {
