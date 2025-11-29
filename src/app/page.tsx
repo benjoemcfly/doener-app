@@ -310,7 +310,15 @@ const tabs = ['menu', 'checkout', 'status'] as const;
 export type Tab = (typeof tabs)[number];
 
 export default function Page() {
-  const [tab, setTab] = useState<Tab>('menu');
+  const [tab, setTab] = useState<Tab>(() => {
+  if (typeof window !== 'undefined') {
+    const params = new URLSearchParams(window.location.search);
+    const payment = params.get('payment');
+    if (payment === 'success') return 'status';
+    if (payment) return 'checkout'; // z.B. failed/cancel
+  }
+  return 'menu';
+});
   const [activeCategory, setActiveCategory] =
     useState<Category>('Döner');
 
@@ -711,7 +719,7 @@ export default function Page() {
     afterOrderCreated,
   ]);
 
-  // Rückkehr von der Payrexx/TWINT-Seite: einfachen Tab-Switch basierend auf ?payment=
+  // Rückkehr von der Payrexx/TWINT-Seite: Query-Parameter aus der URL entfernen
 useEffect(() => {
   if (typeof window === 'undefined') return;
 
@@ -720,21 +728,14 @@ useEffect(() => {
     const payment = params.get('payment');
     if (!payment) return;
 
-    // URL aufräumen (Query entfernen, damit ein Reload sauber ist)
+    // URL ohne Query-Parameter (für Reload etc.)
     const cleanUrl = window.location.origin + window.location.pathname;
     window.history.replaceState(null, '', cleanUrl);
-
-    if (payment === 'success') {
-      // nach erfolgreicher Zahlung direkt auf Status-Tab
-      setTab('status');
-    } else {
-      // bei abgebrochener/fehlgeschlagener Zahlung auf Kasse
-      setTab('checkout');
-    }
   } catch (e) {
-    console.error('Error handling payment redirect', e);
+    console.error('Error cleaning payment query', e);
   }
 }, []);
+
 
   // Beim Klick auf ein Gericht: direkt Konfigurator öffnen
   const openCustomize = useCallback((m: MenuItem) => {
