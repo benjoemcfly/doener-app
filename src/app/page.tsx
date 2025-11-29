@@ -1,6 +1,12 @@
 'use client';
 
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import { useReadyFeedback } from '@/hooks/useReadyFeedback';
 
 // ==========================
@@ -42,12 +48,23 @@ export type Order = {
 };
 
 // ==========================
-// Kategorien & Menüdaten (aus Website abgeleitet)
+// Kategorien & Menüdaten
 // ==========================
-const CATEGORY_TABS = ['Döner', 'Folded', 'Pide', 'Bowls', 'Vegan', 'Fingerfood', 'Getränke'] as const;
+const CATEGORY_TABS = [
+  'Döner',
+  'Folded',
+  'Pide',
+  'Bowls',
+  'Vegan',
+  'Fingerfood',
+  'Getränke',
+] as const;
 export type Category = (typeof CATEGORY_TABS)[number];
 
-function baseOptionGroups(opts?: { includeBread?: boolean; limitedSalad?: boolean }): OptionGroup[] {
+function baseOptionGroups(opts?: {
+  includeBread?: boolean;
+  limitedSalad?: boolean;
+}): OptionGroup[] {
   const includeBread = opts?.includeBread ?? true;
   const limitedSalad = opts?.limitedSalad ?? false;
   const groups: OptionGroup[] = [
@@ -114,42 +131,146 @@ function baseOptionGroups(opts?: { includeBread?: boolean; limitedSalad?: boolea
 // Menü-Einträge pro Kategorie (Preise in CHF -> *100)
 const MENU_BY_CATEGORY: Record<Category, MenuItem[]> = {
   Döner: [
-    { id: 'doener_kebab', name: 'Döner Kebab', price_cents: 1900, emoji: '🥙', options: baseOptionGroups() },
-    { id: 'durum_kebab', name: 'Dürüm Kebab', price_cents: 2000, emoji: '🌯', options: baseOptionGroups() },
-    { id: 'doener_box', name: 'Döner Box', price_cents: 2100, emoji: '🍱', options: baseOptionGroups({ includeBread: false }) },
-    { id: 'doener_teller', name: 'Döner Teller', price_cents: 2400, emoji: '🍽️', options: baseOptionGroups({ includeBread: false }) },
+    {
+      id: 'doener_kebab',
+      name: 'Döner Kebab',
+      price_cents: 1900,
+      emoji: '🥙',
+      options: baseOptionGroups(),
+    },
+    {
+      id: 'durum_kebab',
+      name: 'Dürüm Kebab',
+      price_cents: 2000,
+      emoji: '🌯',
+      options: baseOptionGroups(),
+    },
+    {
+      id: 'doener_box',
+      name: 'Döner Box',
+      price_cents: 2100,
+      emoji: '🍱',
+      options: baseOptionGroups({ includeBread: false }),
+    },
+    {
+      id: 'doener_teller',
+      name: 'Döner Teller',
+      price_cents: 2400,
+      emoji: '🍽️',
+      options: baseOptionGroups({ includeBread: false }),
+    },
   ],
   Folded: [
-    { id: 'folded_istanbul', name: 'Istanbul Folded', price_cents: 2300, emoji: '🫓' },
-    { id: 'folded_guadalajara', name: 'Guadalajara Folded', price_cents: 2300, emoji: '🫓' },
+    {
+      id: 'folded_istanbul',
+      name: 'Istanbul Folded',
+      price_cents: 2300,
+      emoji: '🫓',
+    },
+    {
+      id: 'folded_guadalajara',
+      name: 'Guadalajara Folded',
+      price_cents: 2300,
+      emoji: '🫓',
+    },
   ],
   Pide: [
-    { id: 'pide_doener', name: 'Pide Döner & Mozzarella', price_cents: 2400, emoji: '🫓' },
-    { id: 'pide_spinat_feta', name: 'Pide Spinat & Feta', price_cents: 2200, emoji: '🧀' },
-    { id: 'pide_champignons', name: 'Pide Champignons & Frischkäse', price_cents: 2300, emoji: '🍄' },
-    { id: 'pide_feige_ricotta_burrata_honig', name: 'Pide Feige, Ricotta, Burrata & Honig', price_cents: 2500, emoji: '🍯' },
-    { id: 'pide_sucuk_cheddar', name: 'Pide Sucuk & Cheddar', price_cents: 2400, emoji: '🧀' },
-    { id: 'pide_guacamole_rucola_feta', name: 'Pide Guacamole, Rucola & Feta', price_cents: 2400, emoji: '🥑' },
+    {
+      id: 'pide_doener',
+      name: 'Pide Döner & Mozzarella',
+      price_cents: 2400,
+      emoji: '🫓',
+    },
+    {
+      id: 'pide_spinat_feta',
+      name: 'Pide Spinat & Feta',
+      price_cents: 2200,
+      emoji: '🧀',
+    },
+    {
+      id: 'pide_champignons',
+      name: 'Pide Champignons & Frischkäse',
+      price_cents: 2300,
+      emoji: '🍄',
+    },
+    {
+      id: 'pide_feige_ricotta_burrata_honig',
+      name: 'Pide Feige, Ricotta, Burrata & Honig',
+      price_cents: 2500,
+      emoji: '🍯',
+    },
+    {
+      id: 'pide_sucuk_cheddar',
+      name: 'Pide Sucuk & Cheddar',
+      price_cents: 2400,
+      emoji: '🧀',
+    },
+    {
+      id: 'pide_guacamole_rucola_feta',
+      name: 'Pide Guacamole, Rucola & Feta',
+      price_cents: 2400,
+      emoji: '🥑',
+    },
   ],
   Bowls: [
-    { id: 'bowl_beirut', name: 'Beirut Bowl', price_cents: 2000, emoji: '🥗' },
-    { id: 'bowl_istanbul', name: 'Istanbul Bowl', price_cents: 2000, emoji: '🥗' },
-    { id: 'bowl_guadalajara', name: 'Guadalajara Bowl', price_cents: 2000, emoji: '🥗' },
+    {
+      id: 'bowl_beirut',
+      name: 'Beirut Bowl',
+      price_cents: 2000,
+      emoji: '🥗',
+    },
+    {
+      id: 'bowl_istanbul',
+      name: 'Istanbul Bowl',
+      price_cents: 2000,
+      emoji: '🥗',
+    },
+    {
+      id: 'bowl_guadalajara',
+      name: 'Guadalajara Bowl',
+      price_cents: 2000,
+      emoji: '🥗',
+    },
   ],
   Vegan: [
     { id: 'falafel', name: 'Falafel', price_cents: 1500, emoji: '🧆' },
-    { id: 'karotte_baellchen', name: 'Karottenbällchen', price_cents: 1500, emoji: '🥕' },
-    { id: 'zucchini_baellchen', name: 'Zucchinibällchen', price_cents: 1500, emoji: '🥒' },
+    {
+      id: 'karotte_baellchen',
+      name: 'Karottenbällchen',
+      price_cents: 1500,
+      emoji: '🥕',
+    },
+    {
+      id: 'zucchini_baellchen',
+      name: 'Zucchinibällchen',
+      price_cents: 1500,
+      emoji: '🥒',
+    },
   ],
   Fingerfood: [
-    { id: 'chicken_nuggets', name: 'Chicken Nuggets', price_cents: 1500, emoji: '🍗' },
+    {
+      id: 'chicken_nuggets',
+      name: 'Chicken Nuggets',
+      price_cents: 1500,
+      emoji: '🍗',
+    },
     { id: 'pommes', name: 'Pommes', price_cents: 800, emoji: '🍟' },
   ],
   Getränke: [
     { id: 'ayran', name: 'Ayran', price_cents: 500, emoji: '🥤' },
     { id: 'bier', name: 'Bier', price_cents: 600, emoji: '🍺' },
-    { id: 'dose_033', name: 'Softdrink Dose 0.33L', price_cents: 400, emoji: '🥤' },
-    { id: 'flasche_033', name: 'Softdrink Flasche 0.33L', price_cents: 600, emoji: '🧃' },
+    {
+      id: 'dose_033',
+      name: 'Softdrink Dose 0.33L',
+      price_cents: 400,
+      emoji: '🥤',
+    },
+    {
+      id: 'flasche_033',
+      name: 'Softdrink Flasche 0.33L',
+      price_cents: 600,
+      emoji: '🧃',
+    },
   ],
 };
 
@@ -157,21 +278,24 @@ const MENU_BY_CATEGORY: Record<Category, MenuItem[]> = {
 // Utils
 // ==========================
 function formatPrice(cents: number) {
-  return (cents / 100).toLocaleString('de-CH', { style: 'currency', currency: 'CHF', minimumFractionDigits: 2 });
+  return (cents / 100).toLocaleString('de-CH', {
+    style: 'currency',
+    currency: 'CHF',
+    minimumFractionDigits: 2,
+  });
 }
 function sumCart(lines: OrderLine[]) {
-  return lines.reduce((acc, l) => acc + (l.item?.price_cents ?? 0) * l.qty, 0);
+  return lines.reduce(
+    (acc, l) => acc + (l.item?.price_cents ?? 0) * l.qty,
+    0,
+  );
 }
 const LS_KEY = 'order_ids_v1';
 const ARCHIVE_LS_KEY = 'order_archive_v1';
-const PENDING_CART_KEY = 'twint_pending_cart_v1';
 const todayStr = () => new Date().toISOString().slice(0, 10);
 
-// ==========================
-// Tabs (nur Kunden-Ansicht)
-// ==========================
-const tabs = ['menu', 'checkout', 'status'] as const;
-export type Tab = (typeof tabs)[number];
+// 🔒 Backup-Key für Warenkorb bei TWINT-Zahlungen
+const PENDING_CART_KEY = 'twint_pending_cart_v1';
 
 type PendingCartBackup = {
   lines: OrderLine[];
@@ -179,9 +303,17 @@ type PendingCartBackup = {
   customerPhone?: string;
 };
 
+// ==========================
+// Tabs (nur Kunden-Ansicht)
+// ==========================
+const tabs = ['menu', 'checkout', 'status'] as const;
+export type Tab = (typeof tabs)[number];
+
 export default function Page() {
   const [tab, setTab] = useState<Tab>('menu');
-  const [activeCategory, setActiveCategory] = useState<Category>('Döner');
+  const [activeCategory, setActiveCategory] =
+    useState<Category>('Döner');
+
   const paymentHandledRef = useRef(false);
 
   // Warenkorb
@@ -190,13 +322,15 @@ export default function Page() {
   const miniCartRef = useRef<HTMLDivElement | null>(null);
 
   // Abschnitt-Refs (für Scroll-to)
-  const sectionRefs = useRef<Record<Category, HTMLDivElement | null>>({} as Record<
-    Category,
-    HTMLDivElement | null
-  >);
+  const sectionRefs = useRef<Record<Category, HTMLDivElement | null>>(
+    {} as Record<Category, HTMLDivElement | null>,
+  );
 
   // Customize-Modal
-  const [customizing, setCustomizing] = useState<{ item: MenuItem; specs: Record<string, string[]> } | null>(null);
+  const [customizing, setCustomizing] = useState<{
+    item: MenuItem;
+    specs: Record<string, string[]>;
+  } | null>(null);
 
   // Kontaktfelder
   const [customerEmail, setCustomerEmail] = useState('');
@@ -204,11 +338,15 @@ export default function Page() {
 
   // Mehrere Bestellungen: IDs & Map mit Daten (aktiv)
   const [orderIds, setOrderIds] = useState<string[]>([]); // neueste zuerst
-  const [ordersById, setOrdersById] = useState<Record<string, Order | null>>({});
+  const [ordersById, setOrdersById] = useState<
+    Record<string, Order | null>
+  >({});
 
   // Archiv (nur lokaler Client; Tages-Reset)
   const [archiveIds, setArchiveIds] = useState<string[]>([]);
-  const [archiveById, setArchiveById] = useState<Record<string, Order>>({});
+  const [archiveById, setArchiveById] = useState<
+    Record<string, Order>
+  >({});
   const [showArchive, setShowArchive] = useState(false);
 
   // Ready-UI: Banner + Flash
@@ -228,7 +366,9 @@ export default function Page() {
   // Service Worker registrieren (für Vibration im aktiven Tab)
   useEffect(() => {
     if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.register('/sw.js').catch(() => {});
+      navigator.serviceWorker
+        .register('/sw.js')
+        .catch(() => {});
     }
   }, []);
 
@@ -248,7 +388,11 @@ export default function Page() {
     try {
       const raw = localStorage.getItem(ARCHIVE_LS_KEY);
       if (!raw) return;
-      const obj = JSON.parse(raw) as { date: string; ids: string[]; byId: Record<string, Order> };
+      const obj = JSON.parse(raw) as {
+        date: string;
+        ids: string[];
+        byId: Record<string, Order>;
+      };
       if (obj?.date === todayStr()) {
         setArchiveIds(obj.ids || []);
         setArchiveById(obj.byId || {});
@@ -263,11 +407,17 @@ export default function Page() {
       localStorage.setItem(LS_KEY, JSON.stringify(ids));
     } catch {}
   }, []);
-  const persistArchive = useCallback((ids: string[], byId: Record<string, Order>) => {
-    try {
-      localStorage.setItem(ARCHIVE_LS_KEY, JSON.stringify({ date: todayStr(), ids, byId }));
-    } catch {}
-  }, []);
+  const persistArchive = useCallback(
+    (ids: string[], byId: Record<string, Order>) => {
+      try {
+        localStorage.setItem(
+          ARCHIVE_LS_KEY,
+          JSON.stringify({ date: todayStr(), ids, byId }),
+        );
+      } catch {}
+    },
+    [],
+  );
 
   // Polling aller bekannten Orders (alle 5s)
   useEffect(() => {
@@ -278,7 +428,9 @@ export default function Page() {
       const updated: Record<string, Order | null> = {};
       for (const id of orderIds) {
         try {
-          const r = await fetch(`/api/orders/${id}`, { cache: 'no-store' });
+          const r = await fetch(`/api/orders/${id}`, {
+            cache: 'no-store',
+          });
           if (!r.ok) continue;
           const o = (await r.json()) as Order;
           if (stopped) return;
@@ -297,7 +449,10 @@ export default function Page() {
             setShowReadyBanner(true);
             setFlashMs(1500);
             setFlashOn(true);
-            setTimeout(() => setFlashOn(false), 1500);
+            setTimeout(
+              () => setFlashOn(false),
+              1500,
+            );
           }
         } catch {}
       }
@@ -310,14 +465,18 @@ export default function Page() {
         for (const id of orderIds) {
           const o = merged[id];
           if (!o || o.status !== 'picked_up') continue;
-          const t = new Date(o.updated_at || o.created_at || '').getTime();
+          const t = new Date(
+            o.updated_at || o.created_at || '',
+          ).getTime();
           if (!Number.isFinite(t)) continue;
           if (now - t >= 3 * 60 * 1000) toArchive.push(id);
         }
 
         if (toArchive.length) {
           setOrderIds((prevIds) => {
-            const next = prevIds.filter((id) => !toArchive.includes(id));
+            const next = prevIds.filter(
+              (id) => !toArchive.includes(id),
+            );
             persistIds(next);
             return next;
           });
@@ -326,7 +485,10 @@ export default function Page() {
             for (const id of toArchive) add[id] = merged[id]!;
             const nextById = { ...prevArch, ...add };
             setArchiveIds((prevA) => {
-              const nextIds = [...toArchive.filter((id) => !prevA.includes(id)), ...prevA];
+              const nextIds = [
+                ...toArchive.filter((id) => !prevA.includes(id)),
+                ...prevA,
+              ];
               persistArchive(nextIds, nextById);
               return nextIds;
             });
@@ -335,14 +497,20 @@ export default function Page() {
         }
 
         const allKnown =
-          orderIds.length > 0 && orderIds.every((id) => merged[id]?.status === 'ready');
+          orderIds.length > 0 &&
+          orderIds.every(
+            (id) => merged[id]?.status === 'ready',
+          );
         if (allKnown && !allReadyRef.current) {
           allReadyRef.current = true;
           setBannerText('Alle Bestellungen sind abholbereit');
           setShowReadyBanner(true);
           setFlashMs(3000);
           setFlashOn(true);
-          setTimeout(() => setFlashOn(false), 3000);
+          setTimeout(
+            () => setFlashOn(false),
+            3000,
+          );
         }
         if (!allKnown) {
           allReadyRef.current = false;
@@ -361,32 +529,50 @@ export default function Page() {
   }, [orderIds, trigger, persistIds, persistArchive]);
 
   // Cart helpers
-  const addToCart = useCallback((mi: MenuItem, specs?: Record<string, string[]>) => {
-    setCart((prev) => {
-      const next = [
-        ...prev,
-        { id: crypto.randomUUID(), item: mi, qty: 1, specs: specs ?? {}, note: '' },
-      ];
-      queueMicrotask(() =>
-        miniCartRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }),
-      );
-      return next;
-    });
-  }, []);
+  const addToCart = useCallback(
+    (mi: MenuItem, specs?: Record<string, string[]>) => {
+      setCart((prev) => {
+        const next = [
+          ...prev,
+          {
+            id: crypto.randomUUID(),
+            item: mi,
+            qty: 1,
+            specs: specs ?? {},
+            note: '',
+          },
+        ];
+        queueMicrotask(() =>
+          miniCartRef.current?.scrollIntoView({
+            behavior: 'smooth',
+            block: 'nearest',
+          }),
+        );
+        return next;
+      });
+    },
+    [],
+  );
   const adjustQty = useCallback((id: string, delta: number) => {
     setCart((prev) =>
       prev
         .map((l) =>
-          l.id === id ? { ...l, qty: Math.max(0, l.qty + delta) } : l,
+          l.id === id
+            ? { ...l, qty: Math.max(0, l.qty + delta) }
+            : l,
         )
         .filter((l) => l.qty > 0),
     );
   }, []);
   const removeLine = useCallback(
-    (id: string) => setCart((prev) => prev.filter((l) => l.id !== id)),
+    (id: string) =>
+      setCart((prev) => prev.filter((l) => l.id !== id)),
     [],
   );
-  const totalCents = useMemo(() => sumCart(lines), [lines]);
+  const totalCents = useMemo(
+    () => sumCart(lines),
+    [lines],
+  );
 
   // Gemeinsame Folge-Aktionen nach erfolgreichem Order-POST
   const afterOrderCreated = useCallback(
@@ -435,21 +621,32 @@ export default function Page() {
     } else {
       alert('Fehler beim Absenden');
     }
-  }, [cart, totalCents, customerEmail, customerPhone, afterOrderCreated]);
+  }, [
+    cart,
+    totalCents,
+    customerEmail,
+    customerPhone,
+    afterOrderCreated,
+  ]);
 
   // Bestellung erstellen + TWINT-Zahlung über Payrexx starten
   const payWithTwint = useCallback(async () => {
     if (!cart.length) return;
 
-    // Warenkorb + Kontaktdaten sichern, damit wir sie bei fehlgeschlagener Zahlung wiederherstellen können
+    // 🔒 Warenkorb & Kontaktdaten sichern
     const backup: PendingCartBackup = {
       lines: cart,
       customerEmail: customerEmail || undefined,
       customerPhone: customerPhone || undefined,
     };
     try {
-      localStorage.setItem(PENDING_CART_KEY, JSON.stringify(backup));
-    } catch {}
+      localStorage.setItem(
+        PENDING_CART_KEY,
+        JSON.stringify(backup),
+      );
+    } catch {
+      // ignore
+    }
 
     const payload: {
       lines: OrderLine[];
@@ -473,6 +670,7 @@ export default function Page() {
     }
 
     const { id } = (await r.json()) as { id: string };
+    afterOrderCreated(id);
 
     try {
       setIsTwintPaying(true);
@@ -487,8 +685,6 @@ export default function Page() {
         alert(
           'Deine Bestellung wurde erstellt, aber die Online-Zahlung konnte nicht gestartet werden. Bitte bezahle vor Ort.',
         );
-        // in diesem Fall behandeln wir es wie eine normale Bestellung
-        afterOrderCreated(id);
         try {
           localStorage.removeItem(PENDING_CART_KEY);
         } catch {}
@@ -501,68 +697,85 @@ export default function Page() {
       alert(
         'Deine Bestellung wurde erstellt, aber es gab einen Fehler beim Starten der Online-Zahlung. Bitte bezahle vor Ort.',
       );
-      afterOrderCreated(id);
       try {
         localStorage.removeItem(PENDING_CART_KEY);
       } catch {}
     } finally {
       setIsTwintPaying(false);
     }
-  }, [cart, totalCents, customerEmail, customerPhone, afterOrderCreated]);
+  }, [
+    cart,
+    totalCents,
+    customerEmail,
+    customerPhone,
+    afterOrderCreated,
+  ]);
 
-  // Rückkehr von der Payrexx/TWINT-Seite auswerten (ohne useSearchParams)
+  // Rückkehr von der Payrexx/TWINT-Seite auswerten
   useEffect(() => {
     if (typeof window === 'undefined') return;
     if (paymentHandledRef.current) return;
 
     const url = new URL(window.location.href);
     const payment = url.searchParams.get('payment');
-    const orderId = url.searchParams.get('order');
 
     if (!payment) return;
     paymentHandledRef.current = true;
 
-    // URL aufräumen (payment/order aus Query entfernen)
+    // URL säubern
     url.searchParams.delete('payment');
     url.searchParams.delete('order');
     window.history.replaceState(null, '', url.toString());
 
     if (payment === 'success') {
-      if (orderId) {
-        afterOrderCreated(orderId);
-      }
+      // Bestellung ist bereits angelegt, wir zeigen nur den Status
       try {
         localStorage.removeItem(PENDING_CART_KEY);
       } catch {}
       setTab('status');
     } else {
-      // Fehlgeschlagen / abgebrochen → alten Warenkorb wiederherstellen
+      // fehlgeschlagen / abgebrochen → Warenkorb wiederherstellen
+      let restored = false;
       try {
         const raw = localStorage.getItem(PENDING_CART_KEY);
         if (raw) {
-          const backup = JSON.parse(raw) as PendingCartBackup;
+          const backup = JSON.parse(
+            raw,
+          ) as PendingCartBackup;
           setCart(backup.lines || []);
           setCustomerEmail(backup.customerEmail || '');
           setCustomerPhone(backup.customerPhone || '');
+          restored = true;
         }
-      } catch {}
-
-      try {
         localStorage.removeItem(PENDING_CART_KEY);
-      } catch {}
+      } catch {
+        // ignore
+      }
 
       setTab('checkout');
-      alert(
-        'Die TWINT-Zahlung wurde abgebrochen oder war nicht erfolgreich. Dein Warenkorb wurde wiederhergestellt.',
-      );
+      if (restored) {
+        alert(
+          'Die TWINT-Zahlung wurde abgebrochen oder war nicht erfolgreich. Dein Warenkorb wurde wiederhergestellt.',
+        );
+      } else {
+        alert(
+          'Die TWINT-Zahlung wurde abgebrochen oder war nicht erfolgreich.',
+        );
+      }
     }
-  }, [afterOrderCreated]);
+  }, []);
 
   // Beim Klick auf ein Gericht: direkt Konfigurator öffnen
   const openCustomize = useCallback((m: MenuItem) => {
-    const initialSpecs = (m.options || []).reduce<Record<string, string[]>>((acc, g) => {
+    const initialSpecs = (m.options || []).reduce<
+      Record<string, string[]>
+    >((acc, g) => {
       acc[g.id] =
-        g.type === 'single' && g.required && g.choices.length > 0 ? [g.choices[0].id] : [];
+        g.type === 'single' &&
+        g.required &&
+        g.choices.length > 0
+          ? [g.choices[0].id]
+          : [];
       return acc;
     }, {});
     setCustomizing({ item: m, specs: initialSpecs });
@@ -572,7 +785,11 @@ export default function Page() {
   const scrollToCategory = useCallback((cat: Category) => {
     setActiveCategory(cat);
     const el = sectionRefs.current[cat];
-    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    if (el)
+      el.scrollIntoView({
+        behavior: 'smooth',
+        block: 'start',
+      });
   }, []);
 
   // Scroll-Sync für die Kategorien-Leiste (IntersectionObserver)
@@ -585,10 +802,14 @@ export default function Page() {
         for (const entry of entries) {
           if (!entry.isIntersecting) continue;
           const el = entry.target as HTMLElement;
-          const cat = el.dataset.cat as Category | undefined;
+          const cat = el.dataset.cat as
+            | Category
+            | undefined;
           if (!cat) continue;
 
-          const offset = Math.abs(entry.boundingClientRect.top);
+          const offset = Math.abs(
+            entry.boundingClientRect.top,
+          );
           if (offset < bestOffset) {
             bestOffset = offset;
             bestCat = cat;
@@ -596,16 +817,20 @@ export default function Page() {
         }
 
         if (bestCat) {
-          setActiveCategory((prev) => (prev === bestCat ? prev : bestCat));
+          setActiveCategory((prev) =>
+            prev === bestCat ? prev : bestCat,
+          );
         }
       },
       {
         threshold: 0.4,
-        rootMargin: '-140px 0px 0px 0px', // berücksichtigt Header + Kategorie-Leiste
+        rootMargin: '-140px 0px 0px 0px',
       },
     );
 
-    (CATEGORY_TABS as readonly Category[]).forEach((cat) => {
+    (
+      CATEGORY_TABS as readonly Category[]
+    ).forEach((cat) => {
       const el = sectionRefs.current[cat];
       if (el) observer.observe(el);
     });
@@ -616,7 +841,10 @@ export default function Page() {
   // ==========================
   // UI
   // ==========================
-  const itemCount = useMemo(() => lines.reduce((a, l) => a + l.qty, 0), [lines]);
+  const itemCount = useMemo(
+    () => lines.reduce((a, l) => a + l.qty, 0),
+    [lines],
+  );
 
   return (
     <div className="min-h-dvh bg-neutral-50 text-neutral-900 antialiased [font-feature-settings:'ss01'_'cv03']">
@@ -635,7 +863,9 @@ export default function Page() {
                 <div className="text-[15px] font-semibold tracking-[-0.015em]">
                   Döner Self-Ordering
                 </div>
-                <div className="text-[11px] text-neutral-500">Jetzt • 10–20 Min</div>
+                <div className="text-[11px] text-neutral-500">
+                  Jetzt • 10–20 Min
+                </div>
               </div>
             </div>
             <div className="flex items-center gap-2">
@@ -647,7 +877,9 @@ export default function Page() {
                     : 'bg-black text-white ring-black/10'
                 }`}
               >
-                {soundEnabled ? '🔔 Ton aktiv' : '🔔 Ton aktivieren'}
+                {soundEnabled
+                  ? '🔔 Ton aktiv'
+                  : '🔔 Ton aktivieren'}
               </button>
             </div>
           </div>
@@ -668,7 +900,9 @@ export default function Page() {
         {/* Fixierte Kategorien-Leiste */}
         <div className="border-t border-neutral-100 bg-white/95">
           <nav className="mx-auto flex max-w-5xl items-center gap-2 overflow-x-auto px-4 pb-1 pt-2 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
-            {(CATEGORY_TABS as readonly Category[]).map((c) => (
+            {(
+              CATEGORY_TABS as readonly Category[]
+            ).map((c) => (
               <button
                 key={c}
                 onClick={() => scrollToCategory(c)}
@@ -692,7 +926,9 @@ export default function Page() {
         {/* MENU */}
         {tab === 'menu' && (
           <section className="pb-28">
-            {(CATEGORY_TABS as readonly Category[]).map((cat) => (
+            {(
+              CATEGORY_TABS as readonly Category[]
+            ).map((cat) => (
               <div
                 key={cat}
                 ref={(el) => {
@@ -719,11 +955,12 @@ export default function Page() {
                           <div className="mt-1 text-[13px] text-neutral-500">
                             {formatPrice(m.price_cents)}
                           </div>
-                          {m.options && m.options.length > 0 && (
-                            <div className="mt-2 text-[12px] text-emerald-700">
-                              Tippe um zu konfigurieren
-                            </div>
-                          )}
+                          {m.options &&
+                            m.options.length > 0 && (
+                              <div className="mt-2 text-[12px] text-emerald-700">
+                                Tippe um zu konfigurieren
+                              </div>
+                            )}
                           <div className="mt-3 flex items-center gap-2">
                             <button
                               className="rounded-full bg-black px-3 py-2 text-[13px] font-medium text-white shadow-sm"
@@ -731,14 +968,17 @@ export default function Page() {
                             >
                               Schnell hinzufügen
                             </button>
-                            {m.options && m.options.length > 0 && (
-                              <button
-                                className="rounded-full bg-white px-3 py-2 text-[13px] font-medium text-emerald-700 ring-1 ring-emerald-600/30 hover:bg-emerald-50"
-                                onClick={() => openCustomize(m)}
-                              >
-                                Anpassen
-                              </button>
-                            )}
+                            {m.options &&
+                              m.options.length > 0 && (
+                                <button
+                                  className="rounded-full bg-white px-3 py-2 text-[13px] font-medium text-emerald-700 ring-1 ring-emerald-600/30 hover:bg-emerald-50"
+                                  onClick={() =>
+                                    openCustomize(m)
+                                  }
+                                >
+                                  Anpassen
+                                </button>
+                              )}
                           </div>
                         </div>
 
@@ -777,7 +1017,9 @@ export default function Page() {
         {/* CHECKOUT */}
         {tab === 'checkout' && (
           <section className="pb-28">
-            <h2 className="text-[18px] font-semibold tracking-[-0.02em]">Warenkorb</h2>
+            <h2 className="text-[18px] font-semibold tracking-[-0.02em]">
+              Warenkorb
+            </h2>
             {lines.length === 0 ? (
               <p className="mt-3 text-[13px] text-neutral-500">
                 Dein Warenkorb ist leer.
@@ -791,40 +1033,63 @@ export default function Page() {
                   >
                     <div className="flex items-start justify-between gap-3">
                       <div>
-                        <div className="font-medium">{l.item?.name}</div>
-                        {l.specs && Object.keys(l.specs).length > 0 && (
-                          <ul className="mt-1 text-[12px] text-neutral-600">
-                            {Object.entries(l.specs).map(([gid, arr]) => (
-                              <li key={gid}>
-                                <span className="font-medium">
-                                  {labelForGroup(gid, l.item)}:
-                                </span>{' '}
-                                {arr
-                                  .map((cid) =>
-                                    labelForChoice(gid, cid, l.item),
-                                  )
-                                  .join(', ')}
-                              </li>
-                            ))}
-                          </ul>
-                        )}
+                        <div className="font-medium">
+                          {l.item?.name}
+                        </div>
+                        {l.specs &&
+                          Object.keys(l.specs).length >
+                            0 && (
+                            <ul className="mt-1 text-[12px] text-neutral-600">
+                              {Object.entries(l.specs).map(
+                                ([gid, arr]) => (
+                                  <li key={gid}>
+                                    <span className="font-medium">
+                                      {labelForGroup(
+                                        gid,
+                                        l.item,
+                                      )}
+                                      :
+                                    </span>{' '}
+                                    {arr
+                                      .map((cid) =>
+                                        labelForChoice(
+                                          gid,
+                                          cid,
+                                          l.item,
+                                        ),
+                                      )
+                                      .join(', ')}
+                                  </li>
+                                ),
+                              )}
+                            </ul>
+                          )}
                       </div>
                       <div className="text-[13px] text-neutral-500">
-                        {formatPrice((l.item?.price_cents ?? 0) * l.qty)}
+                        {formatPrice(
+                          (l.item?.price_cents ?? 0) *
+                            l.qty,
+                        )}
                       </div>
                     </div>
                     <div className="mt-2 flex items-center justify-between">
                       <div className="flex items-center gap-2">
                         <button
                           className="rounded-full bg-neutral-100 px-2 py-1"
-                          onClick={() => adjustQty(l.id, -1)}
+                          onClick={() =>
+                            adjustQty(l.id, -1)
+                          }
                         >
                           -
                         </button>
-                        <span className="min-w-6 text-center">{l.qty}</span>
+                        <span className="min-w-6 text-center">
+                          {l.qty}
+                        </span>
                         <button
                           className="rounded-full bg-neutral-100 px-2 py-1"
-                          onClick={() => adjustQty(l.id, +1)}
+                          onClick={() =>
+                            adjustQty(l.id, +1)
+                          }
                         >
                           +
                         </button>
@@ -840,7 +1105,9 @@ export default function Page() {
                 ))}
 
                 <div className="flex items-center justify-between rounded-3xl bg-white p-3 shadow-sm ring-1 ring-black/5">
-                  <div className="text-[13px]">Zwischensumme</div>
+                  <div className="text-[13px]">
+                    Zwischensumme
+                  </div>
                   <div className="text-[15px] font-semibold">
                     {formatPrice(totalCents)}
                   </div>
@@ -853,7 +1120,9 @@ export default function Page() {
                       className="mt-1 w-full rounded-xl border border-neutral-200 px-3 py-2 text-[13px]"
                       placeholder="kunde@example.com"
                       value={customerEmail}
-                      onChange={(e) => setCustomerEmail(e.target.value)}
+                      onChange={(e) =>
+                        setCustomerEmail(e.target.value)
+                      }
                       inputMode="email"
                     />
                   </label>
@@ -864,24 +1133,29 @@ export default function Page() {
                       className="mt-1 w-full rounded-xl border border-neutral-200 px-3 py-2 text-[13px]"
                       placeholder="+41 79 123 45 67"
                       value={customerPhone}
-                      onChange={(e) => setCustomerPhone(e.target.value)}
+                      onChange={(e) =>
+                        setCustomerPhone(e.target.value)
+                      }
                       inputMode="tel"
                     />
                   </label>
 
+                  {/* Online-Zahlung mit TWINT */}
                   <div className="space-y-2 pt-1">
                     <button
                       className="w-full rounded-full bg-emerald-600 px-4 py-2 text-[13px] font-semibold text-white shadow-sm disabled:opacity-60"
                       onClick={payWithTwint}
-                      disabled={lines.length === 0 || isTwintPaying}
+                      disabled={
+                        lines.length === 0 || isTwintPaying
+                      }
                     >
                       {isTwintPaying
                         ? 'TWINT-Zahlung wird gestartet…'
                         : 'Jetzt mit TWINT bezahlen'}
                     </button>
                     <p className="text-center text-[11px] text-neutral-500">
-                      Du wirst zur sicheren TWINT-Zahlungsseite von Payrexx
-                      weitergeleitet.
+                      Du wirst zur sicheren TWINT-Zahlungsseite
+                      von Payrexx weitergeleitet.
                     </p>
                   </div>
 
@@ -891,10 +1165,13 @@ export default function Page() {
                     <div className="h-px flex-1 bg-neutral-200" />
                   </div>
 
+                  {/* Bestehende Funktion: Bestellung ohne Online-Zahlung */}
                   <button
                     className="w-full rounded-full bg-neutral-900 px-4 py-2 text-[13px] font-semibold text-white shadow-sm disabled:opacity-60"
                     onClick={createOrder}
-                    disabled={lines.length === 0 || isTwintPaying}
+                    disabled={
+                      lines.length === 0 || isTwintPaying
+                    }
                   >
                     Bestellung abschicken
                   </button>
@@ -925,9 +1202,14 @@ export default function Page() {
                     >
                       <div className="flex items-center justify-between">
                         <div className="text-[12px] text-neutral-600">
-                          ID: <span className="font-mono">{id}</span>
+                          ID:{' '}
+                          <span className="font-mono">
+                            {id}
+                          </span>
                         </div>
-                        <StatusBadge s={o?.status ?? 'in_queue'} />
+                        <StatusBadge
+                          s={o?.status ?? 'in_queue'}
+                        />
                       </div>
                       {!o ? (
                         <p className="mt-2 text-[13px] text-neutral-500">
@@ -943,32 +1225,52 @@ export default function Page() {
                               >
                                 <div>
                                   {l.qty}× {l.item?.name}
-                                  {l.specs && Object.keys(l.specs).length > 0 && (
-                                    <div className="text-[12px] text-neutral-600">
-                                      {Object.entries(l.specs).map(
-                                        ([gid, arr]) => (
-                                          <span key={gid} className="mr-2">
-                                            <span className="font-medium">
-                                              {labelForGroup(gid, l.item)}:
-                                            </span>{' '}
-                                            {arr
-                                              .map((cid) =>
-                                                labelForChoice(
+                                  {l.specs &&
+                                    Object.keys(l.specs)
+                                      .length > 0 && (
+                                      <div className="text-[12px] text-neutral-600">
+                                        {Object.entries(
+                                          l.specs,
+                                        ).map(
+                                          ([
+                                            gid,
+                                            arr,
+                                          ]) => (
+                                            <span
+                                              key={gid}
+                                              className="mr-2"
+                                            >
+                                              <span className="font-medium">
+                                                {labelForGroup(
                                                   gid,
-                                                  cid,
                                                   l.item,
-                                                ),
-                                              )
-                                              .join(', ')}
-                                          </span>
-                                        ),
-                                      )}
-                                    </div>
-                                  )}
+                                                )}
+                                                :
+                                              </span>{' '}
+                                              {arr
+                                                .map(
+                                                  (
+                                                    cid,
+                                                  ) =>
+                                                    labelForChoice(
+                                                      gid,
+                                                      cid,
+                                                      l.item,
+                                                    ),
+                                                )
+                                                .join(
+                                                  ', ',
+                                                )}
+                                            </span>
+                                          ),
+                                        )}
+                                      </div>
+                                    )}
                                 </div>
                                 <div className="text-neutral-500">
                                   {formatPrice(
-                                    (l.item?.price_cents ?? 0) * l.qty,
+                                    (l.item?.price_cents ??
+                                      0) * l.qty,
                                   )}
                                 </div>
                               </li>
@@ -977,7 +1279,9 @@ export default function Page() {
                           <div className="mt-2 text-right text-[11px] text-neutral-500">
                             aktualisiert:{' '}
                             {new Date(
-                              o.updated_at || o.created_at || '',
+                              o.updated_at ||
+                                o.created_at ||
+                                '',
                             ).toLocaleString()}
                           </div>
                         </>
@@ -988,10 +1292,13 @@ export default function Page() {
               </div>
             )}
 
+            {/* Archiv-Link */}
             <div className="mt-3 text-center text-[12px] text-neutral-500">
               <button
                 className="rounded-full px-3 py-1 underline-offset-2 hover:underline"
-                onClick={() => setShowArchive((v) => !v)}
+                onClick={() =>
+                  setShowArchive((v) => !v)
+                }
               >
                 {showArchive
                   ? 'Archiv ausblenden'
@@ -1019,7 +1326,10 @@ export default function Page() {
                       >
                         <div className="flex items-center justify-between">
                           <div className="text-[12px] text-neutral-600">
-                            ID: <span className="font-mono">{id}</span>
+                            ID:{' '}
+                            <span className="font-mono">
+                              {id}
+                            </span>
                           </div>
                           <span className="rounded-full bg-neutral-100 px-2.5 py-1 text-[11px] text-neutral-700 ring-1 ring-inset ring-neutral-200">
                             Archiv
@@ -1036,7 +1346,8 @@ export default function Page() {
                               </div>
                               <div className="text-neutral-500">
                                 {formatPrice(
-                                  (l.item?.price_cents ?? 0) * l.qty,
+                                  (l.item?.price_cents ??
+                                    0) * l.qty,
                                 )}
                               </div>
                             </li>
@@ -1045,7 +1356,9 @@ export default function Page() {
                         <div className="mt-2 text-right text-[11px] text-neutral-400">
                           abgeschlossen:{' '}
                           {new Date(
-                            o.updated_at || o.created_at || '',
+                            o.updated_at ||
+                              o.created_at ||
+                              '',
                           ).toLocaleString()}
                         </div>
                       </div>
@@ -1066,7 +1379,9 @@ export default function Page() {
               <span className="grid h-7 w-7 place-items-center rounded-full bg-white/10 text-sm">
                 {itemCount}
               </span>
-              <span className="text-[13px]">Warenkorb</span>
+              <span className="text-[13px]">
+                Warenkorb
+              </span>
             </div>
             <button
               className="rounded-full bg-white px-3 py-1.5 text-[13px] font-semibold text-neutral-900"
@@ -1092,7 +1407,9 @@ export default function Page() {
               key={t.key}
               onClick={() => setTab(t.key as Tab)}
               className={`flex h-14 flex-col items-center justify-center text-[11px] ${
-                tab === t.key ? 'font-semibold text-neutral-900' : 'text-neutral-600'
+                tab === t.key
+                  ? 'font-semibold text-neutral-900'
+                  : 'text-neutral-600'
               }`}
             >
               <span className="text-lg">{t.icon}</span>
@@ -1106,7 +1423,11 @@ export default function Page() {
       {showReadyBanner && (
         <div className="fixed left-1/2 top-3 z-50 -translate-x-1/2">
           <div className="flex items-center gap-3 rounded-full bg-emerald-600 px-4 py-2 text-white shadow-lg ring-1 ring-emerald-700/40">
-            <span>🥙 {bannerText || 'Deine Bestellung ist abholbereit'}</span>
+            <span>
+              🥙{' '}
+              {bannerText ||
+                'Deine Bestellung ist abholbereit'}
+            </span>
             <button
               onClick={() => setShowReadyBanner(false)}
               className="rounded-full bg-white/20 px-2 py-1 text-[12px] transition hover:bg-white/30"
@@ -1156,7 +1477,10 @@ function GreenFlash({ durationMs }: { durationMs: number }) {
 // Hilfs-Komponenten & Funktionen
 // ==========================
 function StatusBadge({ s }: { s: OrderStatus }) {
-  const map: Record<OrderStatus, { text: string; cls: string }> = {
+  const map: Record<
+    OrderStatus,
+    { text: string; cls: string }
+  > = {
     in_queue: {
       text: 'In Queue',
       cls: 'bg-neutral-100 text-neutral-700 ring-1 ring-inset ring-neutral-200',
@@ -1173,14 +1497,25 @@ function StatusBadge({ s }: { s: OrderStatus }) {
   };
   const it = map[s] ?? map.in_queue;
   return (
-    <span className={`rounded-full px-2.5 py-1 text-[11px] ${it.cls}`}>{it.text}</span>
+    <span
+      className={`rounded-full px-2.5 py-1 text-[11px] ${it.cls}`}
+    >
+      {it.text}
+    </span>
   );
 }
-function labelForGroup(groupId: string, item?: MenuItem | null) {
+function labelForGroup(
+  groupId: string,
+  item?: MenuItem | null,
+) {
   const g = item?.options?.find((z) => z.id === groupId);
   return g?.label ?? groupId;
 }
-function labelForChoice(groupId: string, choiceId: string, item?: MenuItem | null) {
+function labelForChoice(
+  groupId: string,
+  choiceId: string,
+  item?: MenuItem | null,
+) {
   const g = item?.options?.find((x) => x.id === groupId);
   const c = g?.choices.find((y) => y.id === choiceId);
   return c?.label ?? choiceId;
@@ -1194,7 +1529,8 @@ function Dialog({
   onClose: () => void;
 }) {
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
+    const onKey = (e: KeyboardEvent) =>
+      e.key === 'Escape' && onClose();
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [onClose]);
@@ -1204,7 +1540,10 @@ function Dialog({
       role="dialog"
       aria-modal="true"
     >
-      <div className="absolute inset-0" onClick={onClose} />
+      <div
+        className="absolute inset-0"
+        onClick={onClose}
+      />
       <div className="relative z-10 w-full max-w-md rounded-3xl bg-white p-4 shadow-xl ring-1 ring-black/5">
         {children}
       </div>
@@ -1223,27 +1562,43 @@ function CustomizeCard({
   onCancel: () => void;
   onConfirm: (specs: Record<string, string[]>) => void;
 }) {
-  const [specs, setSpecs] = useState<Record<string, string[]>>(initialSpecs);
-  const toggle = useCallback((g: OptionGroup, choiceId: string) => {
-    setSpecs((prev) => {
-      const current = prev[g.id] ?? [];
-      if (g.type === 'single') return { ...prev, [g.id]: [choiceId] };
-      return current.includes(choiceId)
-        ? { ...prev, [g.id]: current.filter((x) => x !== choiceId) }
-        : { ...prev, [g.id]: [...current, choiceId] };
-    });
-  }, []);
+  const [specs, setSpecs] = useState<
+    Record<string, string[]>
+  >(initialSpecs);
+  const toggle = useCallback(
+    (g: OptionGroup, choiceId: string) => {
+      setSpecs((prev) => {
+        const current = prev[g.id] ?? [];
+        if (g.type === 'single')
+          return { ...prev, [g.id]: [choiceId] };
+        return current.includes(choiceId)
+          ? {
+              ...prev,
+              [g.id]: current.filter((x) => x !== choiceId),
+            }
+          : {
+              ...prev,
+              [g.id]: [...current, choiceId],
+            };
+      });
+    },
+    [],
+  );
   const canConfirm = useMemo(
     () =>
       (item.options || []).every(
-        (g) => !g.required || (specs[g.id]?.length ?? 0) > 0,
+        (g) =>
+          !g.required ||
+          (specs[g.id]?.length ?? 0) > 0,
       ),
     [item.options, specs],
   );
   return (
     <div>
       <div className="flex items-start gap-3">
-        <div className="text-3xl">{item.emoji ?? '🥙'}</div>
+        <div className="text-3xl">
+          {item.emoji ?? '🥙'}
+        </div>
         <div>
           <div className="text-[16px] font-semibold tracking-[-0.015em]">
             {item.name}
@@ -1262,7 +1617,9 @@ function CustomizeCard({
             </div>
             <div className="mt-2 flex flex-wrap gap-2">
               {g.choices.map((c) => {
-                const selected = (specs[g.id] ?? []).includes(c.id);
+                const selected = (specs[g.id] ?? []).includes(
+                  c.id,
+                );
                 return (
                   <button
                     key={c.id}
@@ -1300,6 +1657,7 @@ function CustomizeCard({
   );
 }
 
+// Mini-Warenkorb
 function MiniCart({
   lines,
   totalCents,
@@ -1319,7 +1677,9 @@ function MiniCart({
         <h3 className="text-[15px] font-semibold tracking-[-0.015em]">
           Dein Warenkorb
         </h3>
-        <div className="text-[12px] text-neutral-500">{lines.length} Artikel</div>
+        <div className="text-[12px] text-neutral-500">
+          {lines.length} Artikel
+        </div>
       </div>
 
       {lines.length === 0 ? (
@@ -1335,38 +1695,58 @@ function MiniCart({
                 className="flex items-start justify-between py-2"
               >
                 <div>
-                  <div className="font-medium">{l.item?.name}</div>
-                  {l.specs && Object.keys(l.specs).length > 0 && (
-                    <div className="text-[12px] text-neutral-600">
-                      {Object.entries(l.specs).map(([gid, arr]) => (
-                        <span key={gid} className="mr-2">
-                          {arr.join(', ')}
-                        </span>
-                      ))}
-                    </div>
-                  )}
+                  <div className="font-medium">
+                    {l.item?.name}
+                  </div>
+                  {l.specs &&
+                    Object.keys(l.specs).length >
+                      0 && (
+                      <div className="text-[12px] text-neutral-600">
+                        {Object.entries(l.specs).map(
+                          ([gid, arr]) => (
+                            <span
+                              key={gid}
+                              className="mr-2"
+                            >
+                              {arr.join(', ')}
+                            </span>
+                          ),
+                        )}
+                      </div>
+                    )}
                 </div>
                 <div className="text-right">
                   <div className="text-neutral-500">
-                    {formatPrice((l.item?.price_cents ?? 0) * l.qty)}
+                    {formatPrice(
+                      (l.item?.price_cents ?? 0) *
+                        l.qty,
+                    )}
                   </div>
                   <div className="mt-1 flex items-center justify-end gap-2">
                     <button
                       className="rounded-full bg-neutral-100 px-2 py-1"
-                      onClick={() => onAdjustQty(l.id, -1)}
+                      onClick={() =>
+                        onAdjustQty(l.id, -1)
+                      }
                     >
                       -
                     </button>
-                    <span className="min-w-6 text-center">{l.qty}</span>
+                    <span className="min-w-6 text-center">
+                      {l.qty}
+                    </span>
                     <button
                       className="rounded-full bg-neutral-100 px-2 py-1"
-                      onClick={() => onAdjustQty(l.id, +1)}
+                      onClick={() =>
+                        onAdjustQty(l.id, +1)
+                      }
                     >
                       +
                     </button>
                     <button
                       className="text-[12px] text-red-600"
-                      onClick={() => onRemoveLine(l.id)}
+                      onClick={() =>
+                        onRemoveLine(l.id)
+                      }
                     >
                       Entfernen
                     </button>
@@ -1377,7 +1757,9 @@ function MiniCart({
           </ul>
 
           <div className="mt-3 flex items-center justify-between">
-            <div className="text-[13px]">Zwischensumme</div>
+            <div className="text-[13px]">
+              Zwischensumme
+            </div>
             <div className="text-[15px] font-semibold">
               {formatPrice(totalCents)}
             </div>
