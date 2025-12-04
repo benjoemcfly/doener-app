@@ -1,7 +1,21 @@
-export { formatPrice, sumCart, labelForGroup, labelForChoice, initDefaultSpecs } from './helpers';
+// src/app/components/index.tsx
+
+// Zentrale Re-Exports der UI-Helfer & Komponenten
+
+export {
+  formatPrice,
+  sumCart,
+  LS_KEY,
+  ARCHIVE_LS_KEY,
+  PENDING_CART_KEY,
+  todayStr,
+} from './helpers';
+export type { PendingCartBackup } from './helpers';
+
 export { StatusBadge } from './StatusBadge';
-export { Dialog } from './Dialog';
-export { CustomizeCard } from './CustomizeCard';
-export { MenuView } from './MenuView'; // optional: nicht genutzt in dieser Variante
-export { CheckoutView } from './CheckoutView'; // optional: eingebaute Checkout-UI
+export { Dialog, CustomizeCard } from './CustomizeDialog';
+export { GreenFlash } from './GreenFlash';
+export { MenuView } from './MenuView';
+export { CheckoutView } from './CheckoutView';
 export { StatusView } from './StatusView';
+export { MiniCart } from './MiniCart'; // falls du eine MiniCart.tsx-Komponente hast
