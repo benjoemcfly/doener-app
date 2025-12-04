@@ -25,6 +25,8 @@ import { StatusBadge } from '@/app/components/StatusBadge';
 import { Dialog, CustomizeCard } from '@/app/components/CustomizeDialog';
 import { GreenFlash } from '@/app/components/GreenFlash';
 import { MenuView } from '@/app/components/MenuView';
+import { CheckoutView } from '@/app/components/CheckoutView';
+
 
 function baseOptionGroups(opts?: {
   includeBread?: boolean;
@@ -923,173 +925,23 @@ useEffect(() => {
   />
 )}
 
-
         {/* CHECKOUT */}
         {tab === 'checkout' && (
-          <section className="pb-28">
-            <h2 className="text-[18px] font-semibold tracking-[-0.02em]">
-              Warenkorb
-            </h2>
-            {lines.length === 0 ? (
-              <p className="mt-3 text-[13px] text-neutral-500">
-                Dein Warenkorb ist leer.
-              </p>
-            ) : (
-              <div className="mt-3 space-y-3">
-                {lines.map((l) => (
-                  <div
-                    key={l.id}
-                    className="rounded-3xl bg-white p-3 shadow-sm ring-1 ring-black/5"
-                  >
-                    <div className="flex items-start justify-between gap-3">
-                      <div>
-                        <div className="font-medium">
-                          {l.item?.name}
-                        </div>
-                        {l.specs &&
-                          Object.keys(l.specs).length >
-                            0 && (
-                            <ul className="mt-1 text-[12px] text-neutral-600">
-                              {Object.entries(l.specs).map(
-                                ([gid, arr]) => (
-                                  <li key={gid}>
-                                    <span className="font-medium">
-                                      {labelForGroup(
-                                        gid,
-                                        l.item,
-                                      )}
-                                      :
-                                    </span>{' '}
-                                    {arr
-                                      .map((cid) =>
-                                        labelForChoice(
-                                          gid,
-                                          cid,
-                                          l.item,
-                                        ),
-                                      )
-                                      .join(', ')}
-                                  </li>
-                                ),
-                              )}
-                            </ul>
-                          )}
-                      </div>
-                      <div className="text-[13px] text-neutral-500">
-                        {formatPrice(
-                          (l.item?.price_cents ?? 0) *
-                            l.qty,
-                        )}
-                      </div>
-                    </div>
-                    <div className="mt-2 flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <button
-                          className="rounded-full bg-neutral-100 px-2 py-1"
-                          onClick={() =>
-                            adjustQty(l.id, -1)
-                          }
-                        >
-                          -
-                        </button>
-                        <span className="min-w-6 text-center">
-                          {l.qty}
-                        </span>
-                        <button
-                          className="rounded-full bg-neutral-100 px-2 py-1"
-                          onClick={() =>
-                            adjustQty(l.id, +1)
-                          }
-                        >
-                          +
-                        </button>
-                      </div>
-                      <button
-                        className="text-[13px] text-red-600"
-                        onClick={() => removeLine(l.id)}
-                      >
-                        Entfernen
-                      </button>
-                    </div>
-                  </div>
-                ))}
-
-                <div className="flex items-center justify-between rounded-3xl bg-white p-3 shadow-sm ring-1 ring-black/5">
-                  <div className="text-[13px]">
-                    Zwischensumme
-                  </div>
-                  <div className="text-[15px] font-semibold">
-                    {formatPrice(totalCents)}
-                  </div>
-                </div>
-
-                <div className="space-y-3 rounded-3xl bg-white p-3 shadow-sm ring-1 ring-black/5">
-                  <label className="block text-[13px]">
-                    E-Mail (optional)
-                    <input
-                      className="mt-1 w-full rounded-xl border border-neutral-200 px-3 py-2 text-[13px]"
-                      placeholder="kunde@example.com"
-                      value={customerEmail}
-                      onChange={(e) =>
-                        setCustomerEmail(e.target.value)
-                      }
-                      inputMode="email"
-                    />
-                  </label>
-
-                  <label className="block text-[13px]">
-                    Telefon (für SMS – optional)
-                    <input
-                      className="mt-1 w-full rounded-xl border border-neutral-200 px-3 py-2 text-[13px]"
-                      placeholder="+41 79 123 45 67"
-                      value={customerPhone}
-                      onChange={(e) =>
-                        setCustomerPhone(e.target.value)
-                      }
-                      inputMode="tel"
-                    />
-                  </label>
-
-                  {/* Online-Zahlung mit TWINT */}
-                  <div className="space-y-2 pt-1">
-                    <button
-                      className="w-full rounded-full bg-emerald-600 px-4 py-2 text-[13px] font-semibold text-white shadow-sm disabled:opacity-60"
-                      onClick={payWithTwint}
-                      disabled={
-                        lines.length === 0 || isTwintPaying
-                      }
-                    >
-                      {isTwintPaying
-                        ? 'TWINT-Zahlung wird gestartet…'
-                        : 'Jetzt mit TWINT bezahlen'}
-                    </button>
-                    <p className="text-center text-[11px] text-neutral-500">
-                      Du wirst zur sicheren TWINT-Zahlungsseite
-                      von Payrexx weitergeleitet.
-                    </p>
-                  </div>
-
-                  <div className="flex items-center gap-2 pt-2 text-[11px] text-neutral-400">
-                    <div className="h-px flex-1 bg-neutral-200" />
-                    <span>oder vor Ort bezahlen</span>
-                    <div className="h-px flex-1 bg-neutral-200" />
-                  </div>
-
-                  {/* Bestehende Funktion: Bestellung ohne Online-Zahlung */}
-                  <button
-                    className="w-full rounded-full bg-neutral-900 px-4 py-2 text-[13px] font-semibold text-white shadow-sm disabled:opacity-60"
-                    onClick={createOrder}
-                    disabled={
-                      lines.length === 0 || isTwintPaying
-                    }
-                  >
-                    Bestellung abschicken
-                  </button>
-                </div>
-              </div>
-            )}
-          </section>
+          <CheckoutView
+            lines={lines}
+            totalCents={totalCents}
+            customerEmail={customerEmail}
+            customerPhone={customerPhone}
+            setCustomerEmail={setCustomerEmail}
+            setCustomerPhone={setCustomerPhone}
+            onAdjustQty={adjustQty}
+            onRemoveLine={removeLine}
+            onCreateOrder={createOrder}
+            onPayWithTwint={payWithTwint}
+            isTwintPaying={isTwintPaying}
+          />
         )}
+
 
         {/* STATUS */}
         {tab === 'status' && (
