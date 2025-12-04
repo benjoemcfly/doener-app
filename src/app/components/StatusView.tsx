@@ -1,11 +1,35 @@
 'use client';
 
 import React from 'react';
-import type { Order } from '@/app/types/orders';
-import { StatusBadge } from './StatusBadge';
-import { formatPrice, labelForGroup, labelForChoice } from './helpers';
+import type { Order } from '@/types/order';
+import { StatusBadge } from '@/app/components/StatusBadge';
 
-type StatusViewProps = {
+// lokale formatPrice-Hilfe (wie in page.tsx)
+function formatPrice(cents: number) {
+  return (cents / 100).toLocaleString('de-CH', {
+    style: 'currency',
+    currency: 'CHF',
+    minimumFractionDigits: 2,
+  });
+}
+
+// kleine Helper für Specs-Anzeige
+function labelForGroup(groupId: string, item?: Order['lines'][number]['item']) {
+  const g = item?.options?.find((z) => z.id === groupId);
+  return g?.label ?? groupId;
+}
+
+function labelForChoice(
+  groupId: string,
+  choiceId: string,
+  item?: Order['lines'][number]['item'],
+) {
+  const g = item?.options?.find((x) => x.id === groupId);
+  const c = g?.choices.find((y) => y.id === choiceId);
+  return c?.label ?? choiceId;
+}
+
+export type StatusViewProps = {
   orderIds: string[];
   ordersById: Record<string, Order | null>;
   archiveIds: string[];
@@ -24,7 +48,9 @@ export function StatusView({
 }: StatusViewProps) {
   return (
     <section className="pb-28">
-      <h2 className="text-[18px] font-semibold tracking-[-0.02em]">Bestellstatus</h2>
+      <h2 className="text-[18px] font-semibold tracking-[-0.02em]">
+        Bestellstatus
+      </h2>
 
       {orderIds.length === 0 ? (
         <p className="mt-3 text-[13px] text-neutral-500">
@@ -41,13 +67,18 @@ export function StatusView({
               >
                 <div className="flex items-center justify-between">
                   <div className="text-[12px] text-neutral-600">
-                    ID: <span className="font-mono">{id}</span>
+                    ID:{' '}
+                    <span className="font-mono">
+                      {id}
+                    </span>
                   </div>
                   <StatusBadge s={o?.status ?? 'in_queue'} />
                 </div>
 
                 {!o ? (
-                  <p className="mt-2 text-[13px] text-neutral-500">Lade Status…</p>
+                  <p className="mt-2 text-[13px] text-neutral-500">
+                    Lade Status…
+                  </p>
                 ) : (
                   <>
                     <ul className="mt-3 divide-y text-[13px]">
@@ -58,36 +89,41 @@ export function StatusView({
                         >
                           <div>
                             {l.qty}× {l.item?.name}
-                            {l.specs && Object.keys(l.specs).length > 0 && (
-                              <div className="text-[12px] text-neutral-600">
-                                {Object.entries(l.specs).map(([gid, arr]) => (
-                                  <span key={gid} className="mr-2">
-                                    <span className="font-medium">
-                                      {labelForGroup(gid, l.item)}:
-                                    </span>{' '}
-                                    {arr
-                                      .map((cid) =>
-                                        labelForChoice(gid, cid, l.item)
-                                      )
-                                      .join(', ')}
-                                  </span>
-                                ))}
-                              </div>
-                            )}
+                            {l.specs &&
+                              Object.keys(l.specs).length > 0 && (
+                                <div className="text-[12px] text-neutral-600">
+                                  {Object.entries(l.specs).map(
+                                    ([gid, arr]) => (
+                                      <span
+                                        key={gid}
+                                        className="mr-2"
+                                      >
+                                        <span className="font-medium">
+                                          {labelForGroup(gid, l.item)}:
+                                        </span>{' '}
+                                        {arr
+                                          .map((cid) =>
+                                            labelForChoice(gid, cid, l.item),
+                                          )
+                                          .join(', ')}
+                                      </span>
+                                    ),
+                                  )}
+                                </div>
+                              )}
                           </div>
                           <div className="text-neutral-500">
                             {formatPrice(
-                              (l.item?.price_cents ?? 0) * l.qty
+                              (l.item?.price_cents ?? 0) * l.qty,
                             )}
                           </div>
                         </li>
                       ))}
                     </ul>
-
                     <div className="mt-2 text-right text-[11px] text-neutral-500">
                       aktualisiert:{' '}
                       {new Date(
-                        o.updated_at || o.created_at || ''
+                        o.updated_at || o.created_at || '',
                       ).toLocaleString()}
                     </div>
                   </>
@@ -115,7 +151,6 @@ export function StatusView({
           <h3 className="text-[13px] font-medium text-neutral-600">
             Archiv (heute)
           </h3>
-
           {archiveIds.length === 0 ? (
             <p className="text-[13px] text-neutral-400">
               Noch keine archivierten Bestellungen.
@@ -124,7 +159,6 @@ export function StatusView({
             archiveIds.map((id) => {
               const o = archiveById[id];
               if (!o) return null;
-
               return (
                 <div
                   key={id}
@@ -132,13 +166,15 @@ export function StatusView({
                 >
                   <div className="flex items-center justify-between">
                     <div className="text-[12px] text-neutral-600">
-                      ID: <span className="font-mono">{id}</span>
+                      ID:{' '}
+                      <span className="font-mono">
+                        {id}
+                      </span>
                     </div>
                     <span className="rounded-full bg-neutral-100 px-2.5 py-1 text-[11px] text-neutral-700 ring-1 ring-inset ring-neutral-200">
                       Archiv
                     </span>
                   </div>
-
                   <ul className="mt-3 divide-y text-[13px]">
                     {o.lines.map((l) => (
                       <li
@@ -150,17 +186,16 @@ export function StatusView({
                         </div>
                         <div className="text-neutral-500">
                           {formatPrice(
-                            (l.item?.price_cents ?? 0) * l.qty
+                            (l.item?.price_cents ?? 0) * l.qty,
                           )}
                         </div>
                       </li>
                     ))}
                   </ul>
-
                   <div className="mt-2 text-right text-[11px] text-neutral-400">
                     abgeschlossen:{' '}
                     {new Date(
-                      o.updated_at || o.created_at || ''
+                      o.updated_at || o.created_at || '',
                     ).toLocaleString()}
                   </div>
                 </div>
@@ -172,3 +207,5 @@ export function StatusView({
     </section>
   );
 }
+
+export default StatusView;
