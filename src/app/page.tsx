@@ -21,14 +21,15 @@ import type {
   Category,
 } from '@/types/order';
 
-import { StatusBadge } from '@/app/components/StatusBadge';
-import { Dialog, CustomizeCard } from '@/app/components/CustomizeDialog';
 import { GreenFlash } from '@/app/components/GreenFlash';
+import { Dialog, CustomizeCard } from '@/app/components/CustomizeDialog';
 import { MenuView } from '@/app/components/MenuView';
 import { CheckoutView } from '@/app/components/CheckoutView';
 import { StatusView } from '@/app/components/StatusView';
 
-
+// ==========================
+// Kategorien & Menüdaten
+// ==========================
 
 function baseOptionGroups(opts?: {
   includeBread?: boolean;
@@ -246,6 +247,7 @@ const MENU_BY_CATEGORY: Record<Category, MenuItem[]> = {
 // ==========================
 // Utils
 // ==========================
+
 function formatPrice(cents: number) {
   return (cents / 100).toLocaleString('de-CH', {
     style: 'currency',
@@ -253,12 +255,14 @@ function formatPrice(cents: number) {
     minimumFractionDigits: 2,
   });
 }
+
 function sumCart(lines: OrderLine[]) {
   return lines.reduce(
     (acc, l) => acc + (l.item?.price_cents ?? 0) * l.qty,
     0,
   );
 }
+
 const LS_KEY = 'order_ids_v1';
 const ARCHIVE_LS_KEY = 'order_archive_v1';
 const todayStr = () => new Date().toISOString().slice(0, 10);
@@ -275,6 +279,7 @@ type PendingCartBackup = {
 // ==========================
 // Tabs (nur Kunden-Ansicht)
 // ==========================
+
 const tabs = ['menu', 'checkout', 'status'] as const;
 export type Tab = (typeof tabs)[number];
 
@@ -288,7 +293,6 @@ export default function Page() {
   // Warenkorb
   const [cart, setCart] = useState<OrderLine[]>([]);
   const lines = cart;
-  const miniCartRef = useRef<HTMLDivElement | null>(null);
 
   // Abschnitt-Refs (für Scroll-to)
   const sectionRefs = useRef<Record<Category, HTMLDivElement | null>>(
@@ -376,6 +380,7 @@ export default function Page() {
       localStorage.setItem(LS_KEY, JSON.stringify(ids));
     } catch {}
   }, []);
+
   const persistArchive = useCallback(
     (ids: string[], byId: Record<string, Order>) => {
       try {
@@ -418,10 +423,7 @@ export default function Page() {
             setShowReadyBanner(true);
             setFlashMs(1500);
             setFlashOn(true);
-            setTimeout(
-              () => setFlashOn(false),
-              1500,
-            );
+            setTimeout(() => setFlashOn(false), 1500);
           }
         } catch {}
       }
@@ -476,10 +478,7 @@ export default function Page() {
           setShowReadyBanner(true);
           setFlashMs(3000);
           setFlashOn(true);
-          setTimeout(
-            () => setFlashOn(false),
-            3000,
-          );
+          setTimeout(() => setFlashOn(false), 3000);
         }
         if (!allKnown) {
           allReadyRef.current = false;
@@ -500,44 +499,36 @@ export default function Page() {
   // Cart helpers
   const addToCart = useCallback(
     (mi: MenuItem, specs?: Record<string, string[]>) => {
-      setCart((prev) => {
-        const next = [
-          ...prev,
-          {
-            id: crypto.randomUUID(),
-            item: mi,
-            qty: 1,
-            specs: specs ?? {},
-            note: '',
-          },
-        ];
-        queueMicrotask(() =>
-          miniCartRef.current?.scrollIntoView({
-            behavior: 'smooth',
-            block: 'nearest',
-          }),
-        );
-        return next;
-      });
+      setCart((prev) => [
+        ...prev,
+        {
+          id: crypto.randomUUID(),
+          item: mi,
+          qty: 1,
+          specs: specs ?? {},
+          note: '',
+        },
+      ]);
     },
     [],
   );
+
   const adjustQty = useCallback((id: string, delta: number) => {
     setCart((prev) =>
       prev
         .map((l) =>
-          l.id === id
-            ? { ...l, qty: Math.max(0, l.qty + delta) }
-            : l,
+          l.id === id ? { ...l, qty: Math.max(0, l.qty + delta) } : l,
         )
         .filter((l) => l.qty > 0),
     );
   }, []);
+
   const removeLine = useCallback(
     (id: string) =>
       setCart((prev) => prev.filter((l) => l.id !== id)),
     [],
   );
+
   const totalCents = useMemo(
     () => sumCart(lines),
     [lines],
@@ -680,78 +671,67 @@ export default function Page() {
     afterOrderCreated,
   ]);
 
-// DEBUG + Handling: Rückkehr von der Payrexx/TWINT-Seite
-useEffect(() => {
-  // 1. Läuft der Effect überhaupt?
-  console.log('[payment-effect] mounted');
+  // Handling: Rückkehr von der Payrexx/TWINT-Seite
+  useEffect(() => {
+    // nur einmal pro Mount
+    if (paymentHandledRef.current) return;
+    paymentHandledRef.current = true;
 
-  if (typeof window === 'undefined') {
-    console.log('[payment-effect] window is undefined (SSR)');
-    return;
-  }
-
-  const search = window.location.search;
-  console.log('[payment-effect] location.search =', search);
-
-  try {
-    const params = new URLSearchParams(search);
-    const payment = params.get('payment');
-    const order = params.get('order');
-    console.log('[payment-effect] payment =', payment, 'order =', order);
-
-    if (!payment) {
-      console.log('[payment-effect] no "payment" param -> nothing to do');
+    if (typeof window === 'undefined') {
       return;
     }
 
-    // URL aufräumen (Query entfernen, damit ein Reload sauber ist)
-    const cleanUrl = window.location.origin + window.location.pathname;
-    window.history.replaceState(null, '', cleanUrl);
-    console.log('[payment-effect] cleaned URL to', cleanUrl);
+    const search = window.location.search;
 
-    if (payment === 'success') {
-      console.log('[payment-effect] setting tab -> status');
-      setTab('status');
-      try {
-        localStorage.removeItem(PENDING_CART_KEY);
-      } catch (e) {
-        console.warn('[payment-effect] remove PENDING_CART_KEY failed', e);
+    try {
+      const params = new URLSearchParams(search);
+      const payment = params.get('payment');
+      if (!payment) {
+        return;
       }
-    } else {
-      console.log('[payment-effect] payment != success -> go to checkout');
-      let restored = false;
-      try {
-        const raw = localStorage.getItem(PENDING_CART_KEY);
-        console.log('[payment-effect] PENDING_CART raw =', raw);
-        if (raw) {
-          const backup = JSON.parse(raw) as PendingCartBackup;
-          setCart(backup.lines || []);
-          setCustomerEmail(backup.customerEmail || '');
-          setCustomerPhone(backup.customerPhone || '');
-          restored = true;
+
+      // URL aufräumen (Query entfernen, damit ein Reload sauber ist)
+      const cleanUrl = window.location.origin + window.location.pathname;
+      window.history.replaceState(null, '', cleanUrl);
+
+      if (payment === 'success') {
+        setTab('status');
+        try {
+          localStorage.removeItem(PENDING_CART_KEY);
+        } catch {
+          // ignore
         }
-        localStorage.removeItem(PENDING_CART_KEY);
-      } catch (e) {
-        console.error('[payment-effect] error restoring cart', e);
-      }
-
-      setTab('checkout');
-      if (restored) {
-        alert(
-          'Die TWINT-Zahlung wurde abgebrochen oder war nicht erfolgreich. Dein Warenkorb wurde wiederhergestellt.',
-        );
       } else {
-        alert(
-          'Die TWINT-Zahlung wurde abgebrochen oder war nicht erfolgreich.',
-        );
+        let restored = false;
+        try {
+          const raw = localStorage.getItem(PENDING_CART_KEY);
+          if (raw) {
+            const backup = JSON.parse(raw) as PendingCartBackup;
+            setCart(backup.lines || []);
+            setCustomerEmail(backup.customerEmail || '');
+            setCustomerPhone(backup.customerPhone || '');
+            restored = true;
+          }
+          localStorage.removeItem(PENDING_CART_KEY);
+        } catch {
+          // ignore
+        }
+
+        setTab('checkout');
+        if (restored) {
+          alert(
+            'Die TWINT-Zahlung wurde abgebrochen oder war nicht erfolgreich. Dein Warenkorb wurde wiederhergestellt.',
+          );
+        } else {
+          alert(
+            'Die TWINT-Zahlung wurde abgebrochen oder war nicht erfolgreich.',
+          );
+        }
       }
+    } catch {
+      // ignore
     }
-  } catch (e) {
-    console.error('[payment-effect] outer error', e);
-  }
-}, []);
-
-
+  }, []);
 
   // Beim Klick auf ein Gericht: direkt Konfigurator öffnen
   const openCustomize = useCallback((m: MenuItem) => {
@@ -769,17 +749,6 @@ useEffect(() => {
     setCustomizing({ item: m, specs: initialSpecs });
   }, []);
 
-  // Scroll zu Kategorieabschnitt (Button-Klick)
-  const scrollToCategory = useCallback((cat: Category) => {
-    setActiveCategory(cat);
-    const el = sectionRefs.current[cat];
-    if (el)
-      el.scrollIntoView({
-        behavior: 'smooth',
-        block: 'start',
-      });
-  }, []);
-
   // Scroll-Sync für die Kategorien-Leiste (IntersectionObserver)
   useEffect(() => {
     const observer = new IntersectionObserver(
@@ -790,14 +759,10 @@ useEffect(() => {
         for (const entry of entries) {
           if (!entry.isIntersecting) continue;
           const el = entry.target as HTMLElement;
-          const cat = el.dataset.cat as
-            | Category
-            | undefined;
+          const cat = el.dataset.cat as Category | undefined;
           if (!cat) continue;
 
-          const offset = Math.abs(
-            entry.boundingClientRect.top,
-          );
+          const offset = Math.abs(entry.boundingClientRect.top);
           if (offset < bestOffset) {
             bestOffset = offset;
             bestCat = cat;
@@ -816,9 +781,7 @@ useEffect(() => {
       },
     );
 
-    (
-      CATEGORY_TABS as readonly Category[]
-    ).forEach((cat) => {
+    (CATEGORY_TABS as readonly Category[]).forEach((cat) => {
       const el = sectionRefs.current[cat];
       if (el) observer.observe(el);
     });
@@ -829,6 +792,7 @@ useEffect(() => {
   // ==========================
   // UI
   // ==========================
+
   const itemCount = useMemo(
     () => lines.reduce((a, l) => a + l.qty, 0),
     [lines],
@@ -865,9 +829,7 @@ useEffect(() => {
                     : 'bg-black text-white ring-black/10'
                 }`}
               >
-                {soundEnabled
-                  ? '🔔 Ton aktiv'
-                  : '🔔 Ton aktivieren'}
+                {soundEnabled ? '🔔 Ton aktiv' : '🔔 Ton aktivieren'}
               </button>
             </div>
           </div>
@@ -888,12 +850,19 @@ useEffect(() => {
         {/* Fixierte Kategorien-Leiste */}
         <div className="border-t border-neutral-100 bg-white/95">
           <nav className="mx-auto flex max-w-5xl items-center gap-2 overflow-x-auto px-4 pb-1 pt-2 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
-            {(
-              CATEGORY_TABS as readonly Category[]
-            ).map((c) => (
+            {(CATEGORY_TABS as readonly Category[]).map((c) => (
               <button
                 key={c}
-                onClick={() => scrollToCategory(c)}
+                onClick={() => {
+                  setActiveCategory(c);
+                  const el = sectionRefs.current[c];
+                  if (el) {
+                    el.scrollIntoView({
+                      behavior: 'smooth',
+                      block: 'start',
+                    });
+                  }
+                }}
                 className={`relative rounded-full px-3.5 py-1.5 text-[13px] font-medium transition ${
                   activeCategory === c
                     ? 'text-neutral-900'
@@ -913,19 +882,19 @@ useEffect(() => {
       <main className="mx-auto max-w-5xl px-4">
         {/* MENU */}
         {tab === 'menu' && (
-  <MenuView
-    categories={CATEGORY_TABS}
-    menuByCategory={MENU_BY_CATEGORY}
-    lines={lines}
-    totalCents={totalCents}
-    sectionRefs={sectionRefs}
-    onQuickAdd={addToCart}
-    onCustomize={openCustomize}
-    onAdjustQty={adjustQty}
-    onRemoveLine={removeLine}
-    onGoCheckout={() => setTab('checkout')}
-  />
-)}
+          <MenuView
+            categories={CATEGORY_TABS}
+            menuByCategory={MENU_BY_CATEGORY}
+            lines={lines}
+            totalCents={totalCents}
+            sectionRefs={sectionRefs}
+            onQuickAdd={addToCart}
+            onCustomize={openCustomize}
+            onAdjustQty={adjustQty}
+            onRemoveLine={removeLine}
+            onGoCheckout={() => setTab('checkout')}
+          />
+        )}
 
         {/* CHECKOUT */}
         {tab === 'checkout' && (
@@ -944,7 +913,6 @@ useEffect(() => {
           />
         )}
 
-
         {/* STATUS */}
         {tab === 'status' && (
           <StatusView
@@ -956,7 +924,7 @@ useEffect(() => {
             onToggleArchive={() => setShowArchive((v) => !v)}
           />
         )}
-
+      </main>
 
       {/* Sticky Bottom Cart-Bar */}
       <div className="pointer-events-none fixed inset-x-0 bottom-16 z-40 mx-auto max-w-5xl px-4 sm:bottom-20">
@@ -966,9 +934,7 @@ useEffect(() => {
               <span className="grid h-7 w-7 place-items-center rounded-full bg-white/10 text-sm">
                 {itemCount}
               </span>
-              <span className="text-[13px]">
-                Warenkorb
-              </span>
+              <span className="text-[13px]">Warenkorb</span>
             </div>
             <button
               className="rounded-full bg-white px-3 py-1.5 text-[13px] font-semibold text-neutral-900"
@@ -1011,9 +977,7 @@ useEffect(() => {
         <div className="fixed left-1/2 top-3 z-50 -translate-x-1/2">
           <div className="flex items-center gap-3 rounded-full bg-emerald-600 px-4 py-2 text-white shadow-lg ring-1 ring-emerald-700/40">
             <span>
-              🥙{' '}
-              {bannerText ||
-                'Deine Bestellung ist abholbereit'}
+              🥙 {bannerText || 'Deine Bestellung ist abholbereit'}
             </span>
             <button
               onClick={() => setShowReadyBanner(false)}
@@ -1042,8 +1006,3 @@ useEffect(() => {
     </div>
   );
 }
-
-// ==========================
-// Hilfs-Komponenten & Funktionen
-// ==========================
-
