@@ -1,6 +1,7 @@
 'use client';
 import React from 'react';
-import type { Category } from '@/app/page';
+import type { Category } from '@/types/order';
+
 
 
 export function CategoryNav({ tabs, active, onSelect }: { tabs: readonly Category[]; active: Category; onSelect: (c: Category) => void }) {
