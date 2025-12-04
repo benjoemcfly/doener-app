@@ -1,6 +1,6 @@
 'use client';
 import React from 'react';
-import type { Category } from '@/app/page';
+import type { Category } from '@/types/order';
 import type { MenuItem } from '@/app/types/orders';
 import { formatPrice } from './helpers';
 
@@ -16,7 +16,7 @@ return (
 <>
 {categories.map((cat) => (
 <div key={cat} ref={(el) => { sectionRefs.current[cat] = el; }} data-cat={cat} className="scroll-mt-28">
-<h2 className="mt-6 text-[22px] font-semibold tracking-[-0.02em] text-neutral-900">{cat}</h2>
+<h2 className="mt-6 text-[22px] font-se mibold tracking-[-0.02em] text-neutral-900">{cat}</h2>
 <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
 {menuByCategory[cat].map((m) => (
 <article key={m.id} className="group rounded-3xl bg-white shadow-sm ring-1 ring-black/5 transition hover:shadow-md">
