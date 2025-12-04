@@ -9,33 +9,22 @@ import React, {
 } from 'react';
 import { useReadyFeedback } from '@/hooks/useReadyFeedback';
 
+import {
+  CATEGORY_TABS,
+} from '@/types/order';
 import type {
   OrderStatus,
   MenuItem,
   OptionGroup,
   OrderLine,
   Order,
+  Category,
 } from '@/types/order';
 
 import { StatusBadge } from '@/app/components/StatusBadge';
-
 import { Dialog, CustomizeCard } from '@/app/components/CustomizeDialog';
-
-
-
-// ==========================
-// Kategorien & Menüdaten
-// ==========================
-const CATEGORY_TABS = [
-  'Döner',
-  'Folded',
-  'Pide',
-  'Bowls',
-  'Vegan',
-  'Fingerfood',
-  'Getränke',
-] as const;
-export type Category = (typeof CATEGORY_TABS)[number];
+import { GreenFlash } from '@/app/components/GreenFlash';
+import { MenuView } from '@/app/components/MenuView';
 
 function baseOptionGroups(opts?: {
   includeBread?: boolean;
@@ -920,94 +909,20 @@ useEffect(() => {
       <main className="mx-auto max-w-5xl px-4">
         {/* MENU */}
         {tab === 'menu' && (
-          <section className="pb-28">
-            {(
-              CATEGORY_TABS as readonly Category[]
-            ).map((cat) => (
-              <div
-                key={cat}
-                ref={(el) => {
-                  sectionRefs.current[cat] = el;
-                }}
-                data-cat={cat}
-                className="scroll-mt-32"
-              >
-                <h2 className="mt-6 text-[22px] font-semibold tracking-[-0.02em] text-neutral-900">
-                  {cat}
-                </h2>
+  <MenuView
+    categories={CATEGORY_TABS}
+    menuByCategory={MENU_BY_CATEGORY}
+    lines={lines}
+    totalCents={totalCents}
+    sectionRefs={sectionRefs}
+    onQuickAdd={addToCart}
+    onCustomize={openCustomize}
+    onAdjustQty={adjustQty}
+    onRemoveLine={removeLine}
+    onGoCheckout={() => setTab('checkout')}
+  />
+)}
 
-                <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
-                  {MENU_BY_CATEGORY[cat].map((m) => (
-                    <article
-                      key={m.id}
-                      className="group rounded-3xl bg-white shadow-sm ring-1 ring-black/5 transition hover:shadow-md"
-                    >
-                      <div className="grid grid-cols-[1fr_140px] items-center gap-4 p-4">
-                        <div>
-                          <h3 className="text-[15px] font-semibold leading-tight tracking-[-0.015em] text-neutral-900">
-                            {m.name}
-                          </h3>
-                          <div className="mt-1 text-[13px] text-neutral-500">
-                            {formatPrice(m.price_cents)}
-                          </div>
-                          {m.options &&
-                            m.options.length > 0 && (
-                              <div className="mt-2 text-[12px] text-emerald-700">
-                                Tippe um zu konfigurieren
-                              </div>
-                            )}
-                          <div className="mt-3 flex items-center gap-2">
-                            <button
-                              className="rounded-full bg-black px-3 py-2 text-[13px] font-medium text-white shadow-sm"
-                              onClick={() => addToCart(m)}
-                            >
-                              Schnell hinzufügen
-                            </button>
-                            {m.options &&
-                              m.options.length > 0 && (
-                                <button
-                                  className="rounded-full bg-white px-3 py-2 text-[13px] font-medium text-emerald-700 ring-1 ring-emerald-600/30 hover:bg-emerald-50"
-                                  onClick={() =>
-                                    openCustomize(m)
-                                  }
-                                >
-                                  Anpassen
-                                </button>
-                              )}
-                          </div>
-                        </div>
-
-                        <div className="relative h-28 w-full select-none">
-                          <div className="absolute inset-0 rounded-2xl bg-neutral-100/80 ring-1 ring-inset ring-neutral-200/80" />
-                          <div className="absolute inset-0 grid place-items-center text-5xl">
-                            {m.emoji ?? '🥙'}
-                          </div>
-                          <button
-                            className="absolute bottom-2 right-2 grid h-9 w-9 place-items-center rounded-full bg-neutral-900 text-white shadow-sm"
-                            aria-label="Hinzufügen"
-                            onClick={() => addToCart(m)}
-                          >
-                            +
-                          </button>
-                        </div>
-                      </div>
-                    </article>
-                  ))}
-                </div>
-              </div>
-            ))}
-
-            <div ref={miniCartRef} className="mt-6">
-              <MiniCart
-                lines={lines}
-                totalCents={totalCents}
-                onAdjustQty={adjustQty}
-                onRemoveLine={removeLine}
-                onGoCheckout={() => setTab('checkout')}
-              />
-            </div>
-          </section>
-        )}
 
         {/* CHECKOUT */}
         {tab === 'checkout' && (
@@ -1451,23 +1366,6 @@ useEffect(() => {
   );
 }
 
-// ========= Zusatz-Komponente: sanftes grünes Aufleuchten =========
-function GreenFlash({ durationMs }: { durationMs: number }) {
-  const [off, setOff] = useState(false);
-  useEffect(() => {
-    const start = setTimeout(() => setOff(true), 50);
-    return () => clearTimeout(start);
-  }, []);
-  return (
-    <div
-      className={`pointer-events-none fixed inset-0 z-40 bg-emerald-200/60 transition-opacity ${
-        off ? 'opacity-0' : 'opacity-100'
-      }`}
-      style={{ transitionDuration: `${durationMs}ms` }}
-    />
-  );
-}
-
 // ==========================
 // Hilfs-Komponenten & Funktionen
 // ==========================
@@ -1487,124 +1385,4 @@ function labelForChoice(
   const g = item?.options?.find((x) => x.id === groupId);
   const c = g?.choices.find((y) => y.id === choiceId);
   return c?.label ?? choiceId;
-}
-
-// Mini-Warenkorb
-function MiniCart({
-  lines,
-  totalCents,
-  onAdjustQty,
-  onRemoveLine,
-  onGoCheckout,
-}: {
-  lines: OrderLine[];
-  totalCents: number;
-  onAdjustQty: (id: string, delta: number) => void;
-  onRemoveLine: (id: string) => void;
-  onGoCheckout: () => void;
-}) {
-  return (
-    <div className="rounded-3xl bg-white p-4 shadow-sm ring-1 ring-black/5">
-      <div className="flex items-center justify-between">
-        <h3 className="text-[15px] font-semibold tracking-[-0.015em]">
-          Dein Warenkorb
-        </h3>
-        <div className="text-[12px] text-neutral-500">
-          {lines.length} Artikel
-        </div>
-      </div>
-
-      {lines.length === 0 ? (
-        <p className="mt-2 text-[13px] text-neutral-500">
-          Noch leer – wähle ein Gericht aus.
-        </p>
-      ) : (
-        <>
-          <ul className="mt-3 divide-y text-[13px]">
-            {lines.map((l) => (
-              <li
-                key={l.id}
-                className="flex items-start justify-between py-2"
-              >
-                <div>
-                  <div className="font-medium">
-                    {l.item?.name}
-                  </div>
-                  {l.specs &&
-                    Object.keys(l.specs).length >
-                      0 && (
-                      <div className="text-[12px] text-neutral-600">
-                        {Object.entries(l.specs).map(
-                          ([gid, arr]) => (
-                            <span
-                              key={gid}
-                              className="mr-2"
-                            >
-                              {arr.join(', ')}
-                            </span>
-                          ),
-                        )}
-                      </div>
-                    )}
-                </div>
-                <div className="text-right">
-                  <div className="text-neutral-500">
-                    {formatPrice(
-                      (l.item?.price_cents ?? 0) *
-                        l.qty,
-                    )}
-                  </div>
-                  <div className="mt-1 flex items-center justify-end gap-2">
-                    <button
-                      className="rounded-full bg-neutral-100 px-2 py-1"
-                      onClick={() =>
-                        onAdjustQty(l.id, -1)
-                      }
-                    >
-                      -
-                    </button>
-                    <span className="min-w-6 text-center">
-                      {l.qty}
-                    </span>
-                    <button
-                      className="rounded-full bg-neutral-100 px-2 py-1"
-                      onClick={() =>
-                        onAdjustQty(l.id, +1)
-                      }
-                    >
-                      +
-                    </button>
-                    <button
-                      className="text-[12px] text-red-600"
-                      onClick={() =>
-                        onRemoveLine(l.id)
-                      }
-                    >
-                      Entfernen
-                    </button>
-                  </div>
-                </div>
-              </li>
-            ))}
-          </ul>
-
-          <div className="mt-3 flex items-center justify-between">
-            <div className="text-[13px]">
-              Zwischensumme
-            </div>
-            <div className="text-[15px] font-semibold">
-              {formatPrice(totalCents)}
-            </div>
-          </div>
-
-          <button
-            className="mt-3 w-full rounded-full bg-neutral-900 px-4 py-2 text-[13px] font-semibold text-white shadow-sm"
-            onClick={onGoCheckout}
-          >
-            Zur Kasse
-          </button>
-        </>
-      )}
-    </div>
-  );
 }

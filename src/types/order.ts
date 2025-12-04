@@ -39,3 +39,18 @@ export type Order = {
   created_at?: string;
   updated_at?: string;
 };
+
+// ==========================
+// Kategorien / Tabs für das Menü
+// ==========================
+export const CATEGORY_TABS = [
+  'Döner',
+  'Folded',
+  'Pide',
+  'Bowls',
+  'Vegan',
+  'Fingerfood',
+  'Getränke',
+] as const;
+
+export type Category = (typeof CATEGORY_TABS)[number];
