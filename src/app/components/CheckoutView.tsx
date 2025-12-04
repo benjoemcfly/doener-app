@@ -1,19 +1,45 @@
 'use client';
 
 import React from 'react';
-import type { OrderLine } from '@/app/types/orders';
-import { formatPrice, labelForChoice, labelForGroup } from './helpers';
+import type { OrderLine } from '@/types/order';
 
-type Props = {
+// lokale formatPrice-Hilfe (wie in page.tsx)
+function formatPrice(cents: number) {
+  return (cents / 100).toLocaleString('de-CH', {
+    style: 'currency',
+    currency: 'CHF',
+    minimumFractionDigits: 2,
+  });
+}
+
+// kleine Helper für Specs-Anzeige
+function labelForGroup(groupId: string, item?: OrderLine['item']) {
+  const g = item?.options?.find((z) => z.id === groupId);
+  return g?.label ?? groupId;
+}
+
+function labelForChoice(
+  groupId: string,
+  choiceId: string,
+  item?: OrderLine['item'],
+) {
+  const g = item?.options?.find((x) => x.id === groupId);
+  const c = g?.choices.find((y) => y.id === choiceId);
+  return c?.label ?? choiceId;
+}
+
+export type CheckoutViewProps = {
   lines: OrderLine[];
   totalCents: number;
   customerEmail: string;
   customerPhone: string;
-  onChangeEmail: (v: string) => void;
-  onChangePhone: (v: string) => void;
+  setCustomerEmail: (v: string) => void;
+  setCustomerPhone: (v: string) => void;
   onAdjustQty: (id: string, delta: number) => void;
   onRemoveLine: (id: string) => void;
-  onSubmit: () => void;
+  onCreateOrder: () => void;
+  onPayWithTwint: () => void;
+  isTwintPaying: boolean;
 };
 
 export function CheckoutView({
@@ -21,41 +47,57 @@ export function CheckoutView({
   totalCents,
   customerEmail,
   customerPhone,
-  onChangeEmail,
-  onChangePhone,
+  setCustomerEmail,
+  setCustomerPhone,
   onAdjustQty,
   onRemoveLine,
-  onSubmit,
-}: Props) {
+  onCreateOrder,
+  onPayWithTwint,
+  isTwintPaying,
+}: CheckoutViewProps) {
   return (
     <section className="pb-28">
-      <h2 className="text-[18px] font-semibold tracking-[-0.02em]">Warenkorb</h2>
+      <h2 className="text-[18px] font-semibold tracking-[-0.02em]">
+        Warenkorb
+      </h2>
+
       {lines.length === 0 ? (
-        <p className="mt-3 text-[13px] text-neutral-500">Dein Warenkorb ist leer.</p>
+        <p className="mt-3 text-[13px] text-neutral-500">
+          Dein Warenkorb ist leer.
+        </p>
       ) : (
         <div className="mt-3 space-y-3">
           {lines.map((l) => (
-            <div key={l.id} className="rounded-3xl bg-white p-3 shadow-sm ring-1 ring-black/5">
+            <div
+              key={l.id}
+              className="rounded-3xl bg-white p-3 shadow-sm ring-1 ring-black/5"
+            >
               <div className="flex items-start justify-between gap-3">
                 <div>
                   <div className="font-medium">{l.item?.name}</div>
-                  {l.specs && Object.keys(l.specs).length > 0 && (
-                    <ul className="mt-1 text-[12px] text-neutral-600">
-                      {Object.entries(l.specs).map(([gid, arr]) => (
-                        <li key={gid}>
-                          <span className="font-medium">
-                            {labelForGroup(gid, l.item)}:
-                          </span>{' '}
-                          {arr.map((cid) => labelForChoice(gid, cid, l.item)).join(', ')}
-                        </li>
-                      ))}
-                    </ul>
-                  )}
+                  {l.specs &&
+                    Object.keys(l.specs).length > 0 && (
+                      <ul className="mt-1 text-[12px] text-neutral-600">
+                        {Object.entries(l.specs).map(([gid, arr]) => (
+                          <li key={gid}>
+                            <span className="font-medium">
+                              {labelForGroup(gid, l.item)}:
+                            </span>{' '}
+                            {arr
+                              .map((cid) =>
+                                labelForChoice(gid, cid, l.item),
+                              )
+                              .join(', ')}
+                          </li>
+                        ))}
+                      </ul>
+                    )}
                 </div>
                 <div className="text-[13px] text-neutral-500">
                   {formatPrice((l.item?.price_cents ?? 0) * l.qty)}
                 </div>
               </div>
+
               <div className="mt-2 flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <button
@@ -84,7 +126,9 @@ export function CheckoutView({
 
           <div className="flex items-center justify-between rounded-3xl bg-white p-3 shadow-sm ring-1 ring-black/5">
             <div className="text-[13px]">Zwischensumme</div>
-            <div className="text-[15px] font-semibold">{formatPrice(totalCents)}</div>
+            <div className="text-[15px] font-semibold">
+              {formatPrice(totalCents)}
+            </div>
           </div>
 
           <div className="space-y-3 rounded-3xl bg-white p-3 shadow-sm ring-1 ring-black/5">
@@ -94,7 +138,7 @@ export function CheckoutView({
                 className="mt-1 w-full rounded-xl border border-neutral-200 px-3 py-2 text-[13px]"
                 placeholder="kunde@example.com"
                 value={customerEmail}
-                onChange={(e) => onChangeEmail(e.target.value)}
+                onChange={(e) => setCustomerEmail(e.target.value)}
                 inputMode="email"
               />
             </label>
@@ -105,15 +149,38 @@ export function CheckoutView({
                 className="mt-1 w-full rounded-xl border border-neutral-200 px-3 py-2 text-[13px]"
                 placeholder="+41 79 123 45 67"
                 value={customerPhone}
-                onChange={(e) => onChangePhone(e.target.value)}
+                onChange={(e) => setCustomerPhone(e.target.value)}
                 inputMode="tel"
               />
             </label>
 
+            {/* Online-Zahlung mit TWINT */}
+            <div className="space-y-2 pt-1">
+              <button
+                className="w-full rounded-full bg-emerald-600 px-4 py-2 text-[13px] font-semibold text-white shadow-sm disabled:opacity-60"
+                onClick={onPayWithTwint}
+                disabled={lines.length === 0 || isTwintPaying}
+              >
+                {isTwintPaying
+                  ? 'TWINT-Zahlung wird gestartet…'
+                  : 'Jetzt mit TWINT bezahlen'}
+              </button>
+              <p className="text-center text-[11px] text-neutral-500">
+                Du wirst zur sicheren TWINT-Zahlungsseite von Payrexx weitergeleitet.
+              </p>
+            </div>
+
+            <div className="flex items-center gap-2 pt-2 text-[11px] text-neutral-400">
+              <div className="h-px flex-1 bg-neutral-200" />
+              <span>oder vor Ort bezahlen</span>
+              <div className="h-px flex-1 bg-neutral-200" />
+            </div>
+
+            {/* Bestellung ohne Online-Zahlung */}
             <button
-              className="w-full rounded-full bg-neutral-900 px-4 py-2 text-[13px] font-semibold text-white shadow-sm"
-              onClick={onSubmit}
-              disabled={lines.length === 0}
+              className="w-full rounded-full bg-neutral-900 px-4 py-2 text-[13px] font-semibold text-white shadow-sm disabled:opacity-60"
+              onClick={onCreateOrder}
+              disabled={lines.length === 0 || isTwintPaying}
             >
               Bestellung abschicken
             </button>
@@ -123,3 +190,5 @@ export function CheckoutView({
     </section>
   );
 }
+
+export default CheckoutView;
