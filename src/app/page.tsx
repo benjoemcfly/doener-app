@@ -9,43 +9,19 @@ import React, {
 } from 'react';
 import { useReadyFeedback } from '@/hooks/useReadyFeedback';
 
-// ==========================
-// Typen (konsistent halten)
-// ==========================
-export type OrderStatus = 'in_queue' | 'preparing' | 'ready' | 'picked_up';
+import type {
+  OrderStatus,
+  MenuItem,
+  OptionGroup,
+  OrderLine,
+  Order,
+} from '@/types/order';
 
-export type MenuItem = {
-  id: string;
-  name: string;
-  price_cents: number; // Preise in Rappen/"cents"
-  emoji?: string;
-  options?: OptionGroup[];
-};
+import { StatusBadge } from '@/app/components/StatusBadge';
 
-export type OptionGroup = {
-  id: string;
-  label: string;
-  type: 'single' | 'multi';
-  required?: boolean;
-  choices: { id: string; label: string }[];
-};
+import { Dialog, CustomizeCard } from '@/app/components/CustomizeDialog';
 
-export type OrderLine = {
-  id: string;
-  item?: MenuItem | null;
-  qty: number;
-  specs?: Record<string, string[]>; // groupId -> choiceIds
-  note?: string;
-};
 
-export type Order = {
-  id: string;
-  lines: OrderLine[];
-  total_cents: number;
-  status: OrderStatus;
-  created_at?: string;
-  updated_at?: string;
-};
 
 // ==========================
 // Kategorien & Menüdaten
@@ -1495,34 +1471,7 @@ function GreenFlash({ durationMs }: { durationMs: number }) {
 // ==========================
 // Hilfs-Komponenten & Funktionen
 // ==========================
-function StatusBadge({ s }: { s: OrderStatus }) {
-  const map: Record<
-    OrderStatus,
-    { text: string; cls: string }
-  > = {
-    in_queue: {
-      text: 'In Queue',
-      cls: 'bg-neutral-100 text-neutral-700 ring-1 ring-inset ring-neutral-200',
-    },
-    preparing: {
-      text: 'Preparing',
-      cls: 'bg-amber-100 text-amber-800 ring-1 ring-inset ring-amber-200',
-    },
-    ready: { text: 'Ready', cls: 'bg-emerald-600 text-white' },
-    picked_up: {
-      text: 'Picked up',
-      cls: 'bg-sky-100 text-sky-800 ring-1 ring-inset ring-sky-200',
-    },
-  };
-  const it = map[s] ?? map.in_queue;
-  return (
-    <span
-      className={`rounded-full px-2.5 py-1 text-[11px] ${it.cls}`}
-    >
-      {it.text}
-    </span>
-  );
-}
+
 function labelForGroup(
   groupId: string,
   item?: MenuItem | null,
@@ -1538,142 +1487,6 @@ function labelForChoice(
   const g = item?.options?.find((x) => x.id === groupId);
   const c = g?.choices.find((y) => y.id === choiceId);
   return c?.label ?? choiceId;
-}
-
-function Dialog({
-  children,
-  onClose,
-}: {
-  children: React.ReactNode;
-  onClose: () => void;
-}) {
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) =>
-      e.key === 'Escape' && onClose();
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [onClose]);
-  return (
-    <div
-      className="fixed inset-0 z-50 grid place-items-center bg-black/30 p-3"
-      role="dialog"
-      aria-modal="true"
-    >
-      <div
-        className="absolute inset-0"
-        onClick={onClose}
-      />
-      <div className="relative z-10 w-full max-w-md rounded-3xl bg-white p-4 shadow-xl ring-1 ring-black/5">
-        {children}
-      </div>
-    </div>
-  );
-}
-
-function CustomizeCard({
-  item,
-  initialSpecs,
-  onCancel,
-  onConfirm,
-}: {
-  item: MenuItem;
-  initialSpecs: Record<string, string[]>;
-  onCancel: () => void;
-  onConfirm: (specs: Record<string, string[]>) => void;
-}) {
-  const [specs, setSpecs] = useState<
-    Record<string, string[]>
-  >(initialSpecs);
-  const toggle = useCallback(
-    (g: OptionGroup, choiceId: string) => {
-      setSpecs((prev) => {
-        const current = prev[g.id] ?? [];
-        if (g.type === 'single')
-          return { ...prev, [g.id]: [choiceId] };
-        return current.includes(choiceId)
-          ? {
-              ...prev,
-              [g.id]: current.filter((x) => x !== choiceId),
-            }
-          : {
-              ...prev,
-              [g.id]: [...current, choiceId],
-            };
-      });
-    },
-    [],
-  );
-  const canConfirm = useMemo(
-    () =>
-      (item.options || []).every(
-        (g) =>
-          !g.required ||
-          (specs[g.id]?.length ?? 0) > 0,
-      ),
-    [item.options, specs],
-  );
-  return (
-    <div>
-      <div className="flex items-start gap-3">
-        <div className="text-3xl">
-          {item.emoji ?? '🥙'}
-        </div>
-        <div>
-          <div className="text-[16px] font-semibold tracking-[-0.015em]">
-            {item.name}
-          </div>
-          <div className="text-[13px] text-neutral-500">
-            {formatPrice(item.price_cents)}
-          </div>
-        </div>
-      </div>
-      <div className="mt-4 space-y-4">
-        {(item.options || []).map((g) => (
-          <div key={g.id}>
-            <div className="text-[13px] font-medium">
-              {g.label}
-              {g.required ? ' *' : ''}
-            </div>
-            <div className="mt-2 flex flex-wrap gap-2">
-              {g.choices.map((c) => {
-                const selected = (specs[g.id] ?? []).includes(
-                  c.id,
-                );
-                return (
-                  <button
-                    key={c.id}
-                    onClick={() => toggle(g, c.id)}
-                    className={`rounded-full px-3 py-1.5 text-[13px] shadow-sm ring-1 ${
-                      selected
-                        ? 'bg-emerald-600 text-white ring-emerald-600/30'
-                        : 'bg-neutral-100 text-neutral-800 ring-neutral-200 hover:bg-neutral-200'
-                    }`}
-                  >
-                    {c.label}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-        ))}
-      </div>
-      <div className="mt-5 flex justify-end gap-2">
-        <button
-          className="rounded-full bg-white px-4 py-2 text-[13px] ring-1 ring-neutral-200"
-          onClick={onCancel}
-        >
-          Abbrechen
-        </button>
-        <button
-          className="rounded-full bg-neutral-900 px-4 py-2 text-[13px] font-semibold text-white disabled:opacity-50"
-          onClick={() => onConfirm(specs)}
-          disabled={!canConfirm}
-        >
-          Hinzufügen
-        </button>
-      </div>
-    </div>
-  );
 }
 
 // Mini-Warenkorb
