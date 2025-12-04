@@ -1,42 +1,42 @@
-import type { MenuItem, OrderLine } from '@/app/types/orders';
+// src/app/components/helpers.ts
 
+import type { OrderLine } from '@/types/order';
 
-
-export function formatPrice(cents: number, currency: string = 'EUR') {
-return (cents / 100).toLocaleString('de-CH', {
-style: 'currency',
-currency,
-minimumFractionDigits: 2,
-});
+/**
+ * Preise formatiert in CHF (wie in der UI).
+ */
+export function formatPrice(cents: number) {
+  return (cents / 100).toLocaleString('de-CH', {
+    style: 'currency',
+    currency: 'CHF',
+    minimumFractionDigits: 2,
+  });
 }
 
-
+/**
+ * Gesamtsumme aus Warenkorbzeilen berechnen.
+ */
 export function sumCart(lines: OrderLine[]) {
-return lines.reduce((acc, l) => acc + (l.item?.price_cents ?? 0) * l.qty, 0);
+  return lines.reduce(
+    (acc, l) => acc + (l.item?.price_cents ?? 0) * l.qty,
+    0,
+  );
 }
 
+/**
+ * Local-Storage Keys & Helpers, zentral an einer Stelle.
+ */
+export const LS_KEY = 'order_ids_v1';
+export const ARCHIVE_LS_KEY = 'order_archive_v1';
+export const PENDING_CART_KEY = 'twint_pending_cart_v1';
 
-export function labelForGroup(groupId: string, item?: MenuItem | null) {
-const g = item?.options?.find((z) => z.id === groupId);
-return g?.label ?? groupId;
-}
+export const todayStr = () => new Date().toISOString().slice(0, 10);
 
-
-export function labelForChoice(groupId: string, choiceId: string, item?: MenuItem | null) {
-const g = item?.options?.find((x) => x.id === groupId);
-const c = g?.choices.find((y) => y.id === choiceId);
-return c?.label ?? choiceId;
-}
-
-
-export function initDefaultSpecs(item: MenuItem): Record<string, string[]> {
-const res: Record<string, string[]> = {};
-(item.options || []).forEach((g) => {
-if (g.type === 'single' && g.required && g.choices.length > 0) {
-res[g.id] = [g.choices[0].id];
-} else {
-res[g.id] = [];
-}
-});
-return res;
-}
+/**
+ * Shape vom gesicherten Warenkorb für TWINT-Rückkehr.
+ */
+export type PendingCartBackup = {
+  lines: OrderLine[];
+  customerEmail?: string;
+  customerPhone?: string;
+};

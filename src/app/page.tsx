@@ -21,6 +21,16 @@ import type {
   Category,
 } from '@/types/order';
 
+import {
+  formatPrice,
+  sumCart,
+  LS_KEY,
+  ARCHIVE_LS_KEY,
+  PENDING_CART_KEY,
+  todayStr,
+} from '@/app/components/helpers';
+import type { PendingCartBackup } from '@/app/components/helpers';
+
 import { GreenFlash } from '@/app/components/GreenFlash';
 import { Dialog, CustomizeCard } from '@/app/components/CustomizeDialog';
 import { MenuView } from '@/app/components/MenuView';
@@ -28,38 +38,6 @@ import { CheckoutView } from '@/app/components/CheckoutView';
 import { StatusView } from '@/app/components/StatusView';
 import { MENU_BY_CATEGORY } from '@/app/menuData';
 
-
-// ==========================
-// Utils
-// ==========================
-
-function formatPrice(cents: number) {
-  return (cents / 100).toLocaleString('de-CH', {
-    style: 'currency',
-    currency: 'CHF',
-    minimumFractionDigits: 2,
-  });
-}
-
-function sumCart(lines: OrderLine[]) {
-  return lines.reduce(
-    (acc, l) => acc + (l.item?.price_cents ?? 0) * l.qty,
-    0,
-  );
-}
-
-const LS_KEY = 'order_ids_v1';
-const ARCHIVE_LS_KEY = 'order_archive_v1';
-const todayStr = () => new Date().toISOString().slice(0, 10);
-
-// 🔒 Backup-Key für Warenkorb bei TWINT-Zahlungen
-const PENDING_CART_KEY = 'twint_pending_cart_v1';
-
-type PendingCartBackup = {
-  lines: OrderLine[];
-  customerEmail?: string;
-  customerPhone?: string;
-};
 
 // ==========================
 // Tabs (nur Kunden-Ansicht)
