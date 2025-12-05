@@ -31,9 +31,9 @@ function labelForChoice(
 export type CheckoutViewProps = {
   lines: OrderLine[];
   totalCents: number;
-  customerEmail: string;
+  customerEmail: string;            // bleibt im Typ, wird aber nicht mehr genutzt
   customerPhone: string;
-  setCustomerEmail: (v: string) => void;
+  setCustomerEmail: (v: string) => void; // bleibt im Typ
   setCustomerPhone: (v: string) => void;
   onAdjustQty: (id: string, delta: number) => void;
   onRemoveLine: (id: string) => void;
@@ -42,19 +42,20 @@ export type CheckoutViewProps = {
   isTwintPaying: boolean;
 };
 
-export function CheckoutView({
-  lines,
-  totalCents,
-  customerEmail,
-  customerPhone,
-  setCustomerEmail,
-  setCustomerPhone,
-  onAdjustQty,
-  onRemoveLine,
-  onCreateOrder,
-  onPayWithTwint,
-  isTwintPaying,
-}: CheckoutViewProps) {
+export function CheckoutView(props: CheckoutViewProps) {
+  // wir holen uns nur die Felder, die wir wirklich benutzen
+  const {
+    lines,
+    totalCents,
+    customerPhone,
+    setCustomerPhone,
+    onAdjustQty,
+    onRemoveLine,
+    onCreateOrder,
+    onPayWithTwint,
+    isTwintPaying,
+  } = props;
+
   return (
     <section className="pb-28">
       <h2 className="text-[18px] font-semibold tracking-[-0.02em]">
@@ -132,19 +133,9 @@ export function CheckoutView({
           </div>
 
           <div className="space-y-3 rounded-3xl bg-white p-3 shadow-sm ring-1 ring-black/5">
+            {/* 📞 Nur noch Telefonfeld, ohne „optional“ */}
             <label className="block text-[13px]">
-              E-Mail (optional)
-              <input
-                className="mt-1 w-full rounded-xl border border-neutral-200 px-3 py-2 text-[13px]"
-                placeholder="kunde@example.com"
-                value={customerEmail}
-                onChange={(e) => setCustomerEmail(e.target.value)}
-                inputMode="email"
-              />
-            </label>
-
-            <label className="block text-[13px]">
-              Telefon (für SMS – optional)
+              Telefon (für SMS)
               <input
                 className="mt-1 w-full rounded-xl border border-neutral-200 px-3 py-2 text-[13px]"
                 placeholder="+41 79 123 45 67"
