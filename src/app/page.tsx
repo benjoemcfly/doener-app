@@ -610,36 +610,38 @@ export default function Page() {
           </div>
         </div>
 
-        {/* Fixierte Kategorien-Leiste */}
-        <div className="border-t border-neutral-100 bg-white/95">
-          <nav className="mx-auto flex max-w-5xl items-center gap-2 overflow-x-auto px-4 pb-1 pt-2 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
-            {(CATEGORY_TABS as readonly Category[]).map((c) => (
-              <button
-                key={c}
-                onClick={() => {
-                  setActiveCategory(c);
-                  const el = sectionRefs.current[c];
-                  if (el) {
-                    el.scrollIntoView({
-                      behavior: 'smooth',
-                      block: 'start',
-                    });
-                  }
-                }}
-                className={`relative rounded-full px-3.5 py-1.5 text-[13px] font-medium transition ${
-                  activeCategory === c
-                    ? 'text-neutral-900'
-                    : 'text-neutral-500 hover:text-neutral-800'
-                }`}
-              >
-                <span>{c}</span>
-                {activeCategory === c && (
-                  <span className="absolute inset-x-1 -bottom-1 block h-[3px] rounded-full bg-neutral-900" />
-                )}
-              </button>
-            ))}
-          </nav>
-        </div>
+        {/* Fixierte Kategorien-Leiste nur im Menü-Tab */}
+        {tab === 'menu' && (
+          <div className="border-t border-neutral-100 bg-white/95">
+            <nav className="mx-auto flex max-w-5xl items-center gap-2 overflow-x-auto px-4 pb-1 pt-2 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
+              {(CATEGORY_TABS as readonly Category[]).map((c) => (
+                <button
+                  key={c}
+                  onClick={() => {
+                    setActiveCategory(c);
+                    const el = sectionRefs.current[c];
+                    if (el) {
+                      el.scrollIntoView({
+                        behavior: 'smooth',
+                        block: 'start',
+                      });
+                    }
+                  }}
+                  className={`relative rounded-full px-3.5 py-1.5 text-[13px] font-medium transition ${
+                    activeCategory === c
+                      ? 'text-neutral-900'
+                      : 'text-neutral-500 hover:text-neutral-800'
+                  }`}
+                >
+                  <span>{c}</span>
+                  {activeCategory === c && (
+                    <span className="absolute inset-x-1 -bottom-1 block h-[3px] rounded-full bg-neutral-900" />
+                  )}
+                </button>
+              ))}
+            </nav>
+          </div>
+        )}
       </header>
 
       <main className="mx-auto max-w-5xl px-4">
