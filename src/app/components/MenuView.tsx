@@ -34,7 +34,7 @@ export function MenuView({
   lines,
   totalCents,
   sectionRefs,
-  onQuickAdd, // bleibt im Interface für Kompatibilität, wird hier aber nicht mehr verwendet
+  onQuickAdd, // bleibt für Kompatibilität, wird hier aber nicht genutzt
   onCustomize,
   onAdjustQty,
   onRemoveLine,
@@ -71,16 +71,9 @@ export function MenuView({
                     <div className="mt-1 text-[13px] text-neutral-500">
                       {formatPrice(m.price_cents)}
                     </div>
-
-                    {m.options && m.options.length > 0 && (
-                      <div className="mt-2 text-[12px] text-emerald-700">
-                        Tippe auf das Gericht, um deine Auswahl
-                        (Saucen, Gemüse, etc.) festzulegen.
-                      </div>
-                    )}
                   </div>
 
-                  {/* Emoji-Bereich (ohne Plus-Button) */}
+                  {/* Emoji-Bereich */}
                   <div className="relative h-28 w-full select-none">
                     <div className="absolute inset-0 rounded-2xl bg-neutral-100/80 ring-1 ring-inset ring-neutral-200/80" />
                     <div className="absolute inset-0 grid place-items-center text-5xl">
