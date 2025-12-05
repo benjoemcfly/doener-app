@@ -18,7 +18,9 @@ export type MenuViewProps = {
   menuByCategory: Record<Category, MenuItem[]>;
   lines: OrderLine[];
   totalCents: number;
-  sectionRefs: React.MutableRefObject<Record<Category, HTMLDivElement | null>>;
+  sectionRefs: React.MutableRefObject<
+    Record<Category, HTMLDivElement | null>
+  >;
   onQuickAdd: (item: MenuItem) => void;
   onCustomize: (item: MenuItem) => void;
   onAdjustQty: (id: string, delta: number) => void;
@@ -32,7 +34,7 @@ export function MenuView({
   lines,
   totalCents,
   sectionRefs,
-  onQuickAdd,
+  onQuickAdd, // bleibt im Interface für Kompatibilität, wird hier aber nicht mehr verwendet
   onCustomize,
   onAdjustQty,
   onRemoveLine,
@@ -57,7 +59,8 @@ export function MenuView({
             {(menuByCategory[cat] ?? []).map((m) => (
               <article
                 key={m.id}
-                className="group rounded-3xl bg-white shadow-sm ring-1 ring-black/5 transition hover:shadow-md"
+                className="group cursor-pointer rounded-3xl bg-white shadow-sm ring-1 ring-black/5 transition hover:shadow-md"
+                onClick={() => onCustomize(m)}
               >
                 <div className="grid grid-cols-[1fr_140px] items-center gap-4 p-4">
                   <div>
@@ -71,42 +74,18 @@ export function MenuView({
 
                     {m.options && m.options.length > 0 && (
                       <div className="mt-2 text-[12px] text-emerald-700">
-                        Tippe um zu konfigurieren
+                        Tippe auf das Gericht, um deine Auswahl
+                        (Saucen, Gemüse, etc.) festzulegen.
                       </div>
                     )}
-
-                    <div className="mt-3 flex items-center gap-2">
-                      <button
-                        className="rounded-full bg-black px-3 py-2 text-[13px] font-medium text-white shadow-sm"
-                        onClick={() => onQuickAdd(m)}
-                      >
-                        Schnell hinzufügen
-                      </button>
-
-                      {m.options && m.options.length > 0 && (
-                        <button
-                          className="rounded-full bg-white px-3 py-2 text-[13px] font-medium text-emerald-700 ring-1 ring-emerald-600/30 hover:bg-emerald-50"
-                          onClick={() => onCustomize(m)}
-                        >
-                          Anpassen
-                        </button>
-                      )}
-                    </div>
                   </div>
 
-                  {/* Emoji + Plus */}
+                  {/* Emoji-Bereich (ohne Plus-Button) */}
                   <div className="relative h-28 w-full select-none">
                     <div className="absolute inset-0 rounded-2xl bg-neutral-100/80 ring-1 ring-inset ring-neutral-200/80" />
                     <div className="absolute inset-0 grid place-items-center text-5xl">
                       {m.emoji ?? '🥙'}
                     </div>
-                    <button
-                      className="absolute bottom-2 right-2 grid h-9 w-9 place-items-center rounded-full bg-neutral-900 text-white shadow-sm"
-                      aria-label="Hinzufügen"
-                      onClick={() => onQuickAdd(m)}
-                    >
-                      +
-                    </button>
                   </div>
                 </div>
               </article>
